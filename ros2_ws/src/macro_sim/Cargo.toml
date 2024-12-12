@@ -1,0 +1,19 @@
+[package]
+name = "macro_sim"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bevy = { path = "bevy" }
+rand = "0.8.5"
+rand_chacha = "0.3.1"
+rclrs = "*"
+std_msgs = "*"
+
+# Enable a small amount of optimization in the dev profile.
+[profile.dev]
+opt-level = 1
+
+# Enable a large amount of optimization in the dev profile for dependencies.
+[profile.dev.package."*"]
+opt-level = 3
