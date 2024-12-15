@@ -1,3 +1,5 @@
+use std::f32::consts::PI;
+use std::sync::LazyLock;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::{f32::consts::FRAC_PI_2, ops::Range};
@@ -9,12 +11,20 @@ use bevy::{
     prelude::*,
 };
 
+use geographiclib_rs::{DirectGeodesic, Geodesic};
+
+use geometry_msgs::msg::Twist as TwistMsg;
 use std_msgs::msg::String as StringMsg;
 
 const ASTEROID_RADIUS: f32 = 50.;
 const ASTEROID_SURFACE_RADIUS: f32 = ASTEROID_RADIUS + 0.01;
 const ROVER_CONE_BASE_RADIUS: f32 = 0.75;
 const ROVER_CONE_HEIGHT: f32 = 2.;
+
+// #![feature(const_fn_floating_point_arithmetic)]
+/// a: equatorial radius, f: flattening of ellipsoid (https://geographiclib.sourceforge.io/C++/doc/classGeographicLib_1_1Geodesic.html#ae66c9cecfcbbcb1da52cb408e69f65de)
+static GEODESIC: LazyLock<Geodesic> = LazyLock::new(|| Geodesic::new(ASTEROID_RADIUS as f64, 0.0));
+
 fn main() {
     App::new()
         .add_plugins((DefaultPlugins, MeshPickingPlugin))
@@ -25,51 +35,71 @@ fn main() {
         .add_systems(Startup, setup_world)
         .add_systems(Startup, setup_rover)
         .add_systems(Update, ros_spin_once)
+        .add_systems(Update, update_rover_position)
         .add_systems(Update, draw_mesh_intersections)
         .add_systems(Update, orbit)
         .run();
 }
 
+#[derive(Default)]
+struct LatLong((f64, f64));
+
 #[derive(Resource, Default)]
 struct World {
-    rover_position: (f32, f32),
+    rover: Rover,
+}
+
+#[derive(Default)]
+struct Rover {
+    entity: Option<Entity>,
+    // velocity: (f32, f32, f32), // body frame x, y, yaw
+    latlon: LatLong,
+    heading: f64, // deg, 0 means facing north
+}
+
+pub trait RosNodeAccessor: Send + Sync {
+    fn get_node(&self) -> Arc<rclrs::Node>;
 }
 
 #[derive(Resource)]
 struct Ros {
     context: rclrs::Context,
-    republisher: RepublisherNode,
+    nodes: Mutex<Vec<Arc<dyn RosNodeAccessor>>>,
 }
 impl Ros {
     fn new() -> Self {
-        let context = rclrs::Context::new(std::env::args()).unwrap();
-        let republisher = RepublisherNode::new(&context);
         Self {
-            context,
-            republisher,
+            context: rclrs::Context::new(std::env::args()).unwrap(),
+            nodes: Mutex::new(Vec::new()),
         }
     }
 }
 
-struct RepublisherNode {
-    node: Arc<rclrs::Node>,
-    _subscription: Arc<rclrs::Subscription<StringMsg>>,
-    data: Arc<Mutex<Option<StringMsg>>>,
+fn ros_spin_once(ros: ResMut<Ros>, mut world: ResMut<World>) {
+    for node in &*(ros.nodes.lock().unwrap()) {
+        rclrs::spin_once(node.get_node(), Some(Duration::new(0, 1000)));
+    }
 }
-impl RepublisherNode {
-    fn new(context: &rclrs::Context) -> Self {
-        let node = rclrs::Node::new(context, "republisher").unwrap();
+
+#[derive(Component)]
+struct RoverVelocityListenerComponent(Arc<RoverVelocityListener>);
+
+struct RoverVelocityListener {
+    node: Arc<rclrs::Node>,
+    _subscription: Arc<rclrs::Subscription<TwistMsg>>,
+    data: Arc<Mutex<Option<TwistMsg>>>,
+}
+
+impl RoverVelocityListener {
+    fn new(context: &rclrs::Context, name: &str, topic: &str) -> Self {
+        let node = rclrs::Node::new(context, name).unwrap();
         let data = Arc::new(Mutex::new(None));
         let cb_data = Arc::clone(&data);
         let _subscription = node
-            .create_subscription(
-                "in_topic",
-                rclrs::QOS_PROFILE_DEFAULT,
-                move |msg: StringMsg| {
-                    info!("Received message: {}", msg.data);
-                    *cb_data.lock().unwrap() = Some(msg);
-                },
-            )
+            .create_subscription(topic, rclrs::QOS_PROFILE_DEFAULT, move |msg: TwistMsg| {
+                info!("Received message: {:?}", msg);
+                *cb_data.lock().unwrap() = Some(msg);
+            })
             .unwrap();
         Self {
             node,
@@ -77,15 +107,16 @@ impl RepublisherNode {
             data,
         }
     }
+
+    fn get_data(&self) -> Option<TwistMsg> {
+        self.data.lock().unwrap().clone()
+    }
 }
 
-// fn ros_setup(mut ros: ResMut<Ros>) {
-//     ros.context = rclrs::Context::new(std::env::args()).unwrap();
-//     ros.republisher = RepublisherNode::new(&ros.context);
-// }
-
-fn ros_spin_once(ros: ResMut<Ros>) {
-    rclrs::spin_once(ros.republisher.node.clone(), Some(Duration::new(0, 1000)));
+impl RosNodeAccessor for RoverVelocityListener {
+    fn get_node(&self) -> Arc<rclrs::Node> {
+        self.node.clone()
+    }
 }
 
 fn setup_cameras(mut commands: Commands) {
@@ -96,23 +127,47 @@ fn setup_cameras(mut commands: Commands) {
 }
 
 fn setup_rover(
+    mut world: ResMut<World>,
+    mut ros: ResMut<Ros>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    let rover = meshes.add(Cone::new(ROVER_CONE_BASE_RADIUS, ROVER_CONE_HEIGHT));
+    let mesh = meshes.add(Cone::new(ROVER_CONE_BASE_RADIUS, ROVER_CONE_HEIGHT));
     let green_mtl = materials.add(StandardMaterial {
         emissive: GREEN.into(),
         base_color: Color::from(GREEN),
         ..Default::default()
     });
 
-    commands.spawn((
-        Transform::from_xyz(0., 0., ASTEROID_SURFACE_RADIUS),
-        Mesh3d(rover),
-        MeshMaterial3d(green_mtl),
+    let rover_velocity_listener = Arc::new(RoverVelocityListener::new(
+        &ros.context,
+        "rover_velocity",
+        "rover_velocity_cmd",
     ));
+    ros.nodes
+        .lock()
+        .unwrap()
+        .push(rover_velocity_listener.clone());
+
+    world.rover.entity = Some(
+        commands
+            .spawn((
+                Transform::from_xyz(0., 0., ASTEROID_SURFACE_RADIUS),
+                Visibility::default(),
+                RoverVelocityListenerComponent(rover_velocity_listener.clone()),
+            ))
+            .with_children(|parent| {
+                parent.spawn((
+                    Transform::from_rotation(Quat::from_rotation_x(0.5 * PI)),
+                    Mesh3d(mesh),
+                    MeshMaterial3d(green_mtl),
+                ));
+            })
+            .id(),
+    );
+    world.rover.latlon = LatLong((0.0, 0.0));
 }
 
 fn setup_world(
@@ -139,6 +194,66 @@ fn setup_world(
         Mesh3d(sphere),
         MeshMaterial3d(gray_mtl),
     ));
+}
+
+fn latlon_to_xyz(lat: f64, lon: f64) -> Vec3 {
+    Vec3::new(
+        ASTEROID_SURFACE_RADIUS * (lat.to_radians().cos() * lon.to_radians().sin()) as f32,
+        ASTEROID_SURFACE_RADIUS * (lat.to_radians().sin()) as f32,
+        ASTEROID_SURFACE_RADIUS * (lat.to_radians().cos() * lon.to_radians().cos()) as f32,
+    )
+}
+
+/// 0 azimuth is facing east while 0 heading is facing north
+fn heading_to_azimuth(heading: f64) -> f64 {
+    heading + 90.0
+}
+fn azimuth_to_heading(azimuth: f64) -> f64 {
+    azimuth - 90.0
+}
+
+fn update_rover_position(
+    mut rover_velocity_listener_query: Query<&RoverVelocityListenerComponent>,
+    mut world: ResMut<World>,
+    mut transforms: Query<&mut Transform>,
+    time: Res<Time>,
+) {
+    let mut rover = &mut world.rover;
+    let twist = rover_velocity_listener_query
+        .get(rover.entity.unwrap())
+        .unwrap()
+        .0
+        .get_data();
+    // let Some(twist) = twist else { return };
+    let twist = twist.unwrap_or(TwistMsg::default());
+    // info!("Twist: {:?}", twist);
+
+    let dist = twist.linear.x * (time.delta_secs() as f64);
+
+    /** FIXME: Sloppy math! **/
+    let rover_azimuth = heading_to_azimuth(rover.heading);
+    let (lat, lon, az) = GEODESIC.direct(rover.latlon.0 .0, rover.latlon.0 .1, rover_azimuth, dist);
+    let (look_at_lat, look_at_lon, _) =
+        GEODESIC.direct(rover.latlon.0 .0, rover.latlon.0 .1, rover_azimuth, 0.01);
+    rover.latlon = LatLong((lat, lon));
+    rover.heading =
+        azimuth_to_heading(az) + twist.angular.z.to_degrees() * (time.delta_secs() as f64);
+    let rover_position = latlon_to_xyz(rover.latlon.0 .0, rover.latlon.0 .1);
+    /*****/
+
+    // up direction is defined by the vector pointing from the center of the asteroid (0, 0, 0) to the rover position
+    let up = rover_position;
+
+    let prev_transform = transforms.get(rover.entity.unwrap()).unwrap();
+    *transforms.get_mut(rover.entity.unwrap()).unwrap() = Transform {
+        translation: rover_position,
+        // rotation: Quat::from_rotation_y(rover.heading as f32),
+        ..default()
+    }
+    .looking_at(
+        latlon_to_xyz(look_at_lat, look_at_lon),
+        Dir3::new(up).unwrap(),
+    )
 }
 
 fn draw_mesh_intersections(pointers: Query<&PointerInteraction>, mut gizmos: Gizmos) {

@@ -9,6 +9,9 @@ rand = "0.8.5"
 rand_chacha = "0.3.1"
 rclrs = "*"
 std_msgs = "*"
+geometry_msgs = "*"
+geo = "0.29.3"
+geographiclib-rs = "0.2.4"
 
 # Enable a small amount of optimization in the dev profile.
 [profile.dev]
