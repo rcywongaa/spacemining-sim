@@ -6,9 +6,9 @@
    ```
    colcon build --packages-up-to macro_sim
    ```
-1. In this directory, run
+1. Run with
    ```
-   cargo run
+   ./install/macro_sim/lib/macro_sim/macro_sim
    ```
 
 # Useful Commands

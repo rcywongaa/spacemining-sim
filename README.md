@@ -86,14 +86,15 @@ Use MoveIt2, Nav2 and Gazebo to simulate certain robot behaviors
 - Drilling motion
 
 ## TODO
-- Set up CI/CD & linters
-- Bare minimum macro sim
-  - Single excavator with manual controls
-  - Interface with ROS using `ros2-rust`
-- Set up robot running Space ROS
-- Set up micro sim (Gazebo)
-- Set up MoveIt2
-- Set up Nav2
+- [] Set up CI/CD & linters
+- [x] Bare minimum macro sim
+  - [x] Single excavator with manual controls
+  - [x] Interface with ROS using `ros2-rust`
+- [] Set up robot running Space ROS
+  - [] Create HFSMBTH
+- [] Set up micro sim (Gazebo)
+- [] Set up MoveIt2
+- [] Set up Nav2
 
 ## FAQ
 Why Bevy and not Gazebo?
@@ -102,7 +103,3 @@ Why Bevy and not Gazebo?
 1. I plan to scale this to large number of robots and didn't want to simulate the physics of every single one.
    Note that Gazebo is still used when simulating the sensor and robot arm during arm motion planning.
 1. [Gazebo vs *\<insert game engine\>*](https://discourse.ros.org/t/why-do-we-use-gazebo-instead-of-unreal-or-unity/25890/15).
-
-## Open Questions
-- Can SpaceROS work with normal ROS2?
-- Does ros2-rust work with SpaceROS?
