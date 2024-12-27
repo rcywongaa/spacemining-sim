@@ -11,6 +11,8 @@ rand_chacha = "0.3.1"
 rclrs = "*"
 std_msgs = "*"
 geometry_msgs = "*"
+geographic_msgs = "*"
+rover_interfaces = "*"
 geo = "0.29.3"
 geographiclib-rs = "0.2.4"
 

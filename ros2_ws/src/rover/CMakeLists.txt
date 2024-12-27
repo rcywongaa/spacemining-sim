@@ -21,6 +21,9 @@ add_executable (${PROJECT_NAME} src/main.cpp)
 ament_target_dependencies(${PROJECT_NAME} rclcpp rover_interfaces)
 target_link_libraries(${PROJECT_NAME} ${GeographicLib_LIBRARIES})
 
+install(TARGETS
+  ${PROJECT_NAME}
+  DESTINATION lib/${PROJECT_NAME})
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)

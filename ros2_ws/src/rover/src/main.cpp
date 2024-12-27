@@ -49,7 +49,7 @@ class Rover : public rclcpp::Node {
 public:
   Rover() : Node("rover") {
     nav_target_service = this->create_service<rover_interfaces::srv::SendNavTarget>(
-        "target_pose", std::bind(&Rover::nav_target_cb, this, _1, _2));
+        "send_nav_target", std::bind(&Rover::nav_target_cb, this, _1, _2));
 
     position_listener =
         this->create_subscription<rover_interfaces::msg::GeoPose2D>(
@@ -63,6 +63,9 @@ private:
   void nav_target_cb(
       const std::shared_ptr<rover_interfaces::srv::SendNavTarget::Request> request,
       std::shared_ptr<rover_interfaces::srv::SendNavTarget::Response> response) {
+    RCLCPP_INFO(this->get_logger(), "Received target pose: %f, %f",
+                request->target.position.latitude,
+                request->target.position.longitude);
     target_pose = request->target;
   }
 

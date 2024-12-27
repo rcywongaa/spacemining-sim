@@ -13,7 +13,10 @@ use bevy::{
 
 use geographiclib_rs::{DirectGeodesic, Geodesic};
 
+use geographic_msgs::msg::GeoPoint;
 use geometry_msgs::msg::Twist as TwistMsg;
+use rover_interfaces::msg::GeoPose2D as GeoPose2DMsg;
+use rover_interfaces::srv::SendNavTarget;
 use std_msgs::msg::String as StringMsg;
 
 const ASTEROID_RADIUS: f32 = 50.;
@@ -36,7 +39,7 @@ fn main() {
         .add_systems(Startup, setup_rover)
         .add_systems(Update, ros_spin_once)
         .add_systems(Update, update_rover_position)
-        .add_systems(Update, draw_mesh_intersections)
+        .add_systems(Update, right_click_send_nav_target)
         .add_systems(Update, orbit)
         .run();
 }
@@ -77,43 +80,74 @@ impl Ros {
 
 fn ros_spin_once(ros: ResMut<Ros>, mut world: ResMut<World>) {
     for node in &*(ros.nodes.lock().unwrap()) {
-        rclrs::spin_once(node.get_node(), Some(Duration::new(0, 1000)));
+        rclrs::spin_once(node.get_node(), Some(Duration::new(0, 100000)));
     }
 }
 
 #[derive(Component)]
-struct RoverVelocityListenerComponent(Arc<RoverVelocityListener>);
+struct RoverNodeComponent(Arc<RoverNode>);
 
-struct RoverVelocityListener {
+struct RoverNode {
     node: Arc<rclrs::Node>,
-    _subscription: Arc<rclrs::Subscription<TwistMsg>>,
-    data: Arc<Mutex<Option<TwistMsg>>>,
+
+    velocity_subscription: Arc<rclrs::Subscription<TwistMsg>>,
+    velocity: Arc<Mutex<Option<TwistMsg>>>,
+
+    send_nav_target_client: Arc<rclrs::Client<SendNavTarget>>,
 }
 
-impl RoverVelocityListener {
+impl RoverNode {
     fn new(context: &rclrs::Context, name: &str, topic: &str) -> Self {
         let node = rclrs::Node::new(context, name).unwrap();
-        let data = Arc::new(Mutex::new(None));
-        let cb_data = Arc::clone(&data);
-        let _subscription = node
+
+        let velocity = Arc::new(Mutex::new(None));
+        let cb_velocity = Arc::clone(&velocity);
+        let velocity_subscription = node
             .create_subscription(topic, rclrs::QOS_PROFILE_DEFAULT, move |msg: TwistMsg| {
-                info!("Received message: {:?}", msg);
-                *cb_data.lock().unwrap() = Some(msg);
+                debug!("Received message: {:?}", msg);
+                *cb_velocity.lock().unwrap() = Some(msg);
             })
             .unwrap();
+
+        let send_nav_target_client = node
+            .create_client::<SendNavTarget>("/send_nav_target")
+            .unwrap();
+
         Self {
             node,
-            _subscription,
-            data,
+            velocity_subscription,
+            velocity,
+            send_nav_target_client,
         }
     }
 
-    fn get_data(&self) -> Option<TwistMsg> {
-        self.data.lock().unwrap().clone()
+    fn get_velocity(&self) -> Option<TwistMsg> {
+        self.velocity.lock().unwrap().clone()
+    }
+
+    fn send_nav_target(&self, lat: f64, lon: f64) {
+        info!("Sending nav target: ({}, {})", lat, lon);
+        let request = rover_interfaces::srv::SendNavTarget_Request {
+            target: GeoPose2DMsg {
+                position: GeoPoint {
+                    latitude: lat,
+                    longitude: lon,
+                    altitude: 0.0,
+                },
+                heading: 0.0,
+            },
+        };
+        self.send_nav_target_client
+            .async_send_request_with_callback(
+                &request,
+                move |response: rover_interfaces::srv::SendNavTarget_Response| {
+                    info!("Response: {:?}", response);
+                },
+            );
     }
 }
 
-impl RosNodeAccessor for RoverVelocityListener {
+impl RosNodeAccessor for RoverNode {
     fn get_node(&self) -> Arc<rclrs::Node> {
         self.node.clone()
     }
@@ -141,7 +175,7 @@ fn setup_rover(
         ..Default::default()
     });
 
-    let rover_velocity_listener = Arc::new(RoverVelocityListener::new(
+    let rover_velocity_listener = Arc::new(RoverNode::new(
         &ros.context,
         "rover_velocity",
         "rover_velocity_cmd",
@@ -156,7 +190,7 @@ fn setup_rover(
             .spawn((
                 Transform::from_xyz(0., 0., ASTEROID_SURFACE_RADIUS),
                 Visibility::default(),
-                RoverVelocityListenerComponent(rover_velocity_listener.clone()),
+                RoverNodeComponent(rover_velocity_listener.clone()),
             ))
             .with_children(|parent| {
                 parent.spawn((
@@ -196,12 +230,33 @@ fn setup_world(
     ));
 }
 
+/// https://stackoverflow.com/a/1185413/3177701
+fn xyz_to_latlon(xyz: Vec3) -> (f64, f64) {
+    /* Convert from bevy coordinates to common coordinates */
+    let x = xyz.x;
+    let y = xyz.z;
+    let z = -xyz.y;
+
+    let lat = (z / ASTEROID_SURFACE_RADIUS as f32).asin().to_degrees() as f64;
+    let lon = (y / ASTEROID_SURFACE_RADIUS as f32)
+        .atan2(x / ASTEROID_SURFACE_RADIUS as f32)
+        .to_degrees() as f64;
+    (lat, lon)
+}
+
 fn latlon_to_xyz(lat: f64, lon: f64) -> Vec3 {
-    Vec3::new(
-        ASTEROID_SURFACE_RADIUS * (lat.to_radians().cos() * lon.to_radians().sin()) as f32,
-        ASTEROID_SURFACE_RADIUS * (lat.to_radians().sin()) as f32,
-        ASTEROID_SURFACE_RADIUS * (lat.to_radians().cos() * lon.to_radians().cos()) as f32,
-    )
+    // Vec3::new(
+    //     ASTEROID_SURFACE_RADIUS * (lat.to_radians().cos() * lon.to_radians().sin()) as f32,
+    //     ASTEROID_SURFACE_RADIUS * (lat.to_radians().sin()) as f32,
+    //     ASTEROID_SURFACE_RADIUS * (lat.to_radians().cos() * lon.to_radians().cos()) as f32,
+    // )
+
+    /* Common convention is x: right, y: into screen, z: up */
+    let x = ASTEROID_SURFACE_RADIUS * (lat.to_radians().cos() * lon.to_radians().cos()) as f32;
+    let y = ASTEROID_SURFACE_RADIUS * (lat.to_radians().cos() * lon.to_radians().sin()) as f32;
+    let z = ASTEROID_SURFACE_RADIUS * lat.to_radians().sin() as f32;
+    /* bevy coordinate system is x: right, y: up, z: out of screen */
+    Vec3::new(x, z, -y)
 }
 
 /// 0 azimuth is facing east while 0 heading is facing north
@@ -213,17 +268,17 @@ fn azimuth_to_heading(azimuth: f64) -> f64 {
 }
 
 fn update_rover_position(
-    mut rover_velocity_listener_query: Query<&RoverVelocityListenerComponent>,
+    mut rover_node: Query<&RoverNodeComponent>,
     mut world: ResMut<World>,
     mut transforms: Query<&mut Transform>,
     time: Res<Time>,
 ) {
     let mut rover = &mut world.rover;
-    let twist = rover_velocity_listener_query
+    let twist = rover_node
         .get(rover.entity.unwrap())
         .unwrap()
         .0
-        .get_data();
+        .get_velocity();
     // let Some(twist) = twist else { return };
     let twist = twist.unwrap_or(TwistMsg::default());
     // info!("Twist: {:?}", twist);
@@ -256,14 +311,31 @@ fn update_rover_position(
     )
 }
 
-fn draw_mesh_intersections(pointers: Query<&PointerInteraction>, mut gizmos: Gizmos) {
-    for (point, normal) in pointers
-        .iter()
-        .filter_map(|interaction| interaction.get_nearest_hit())
-        .filter_map(|(_entity, hit)| hit.position.zip(hit.normal))
-    {
-        gizmos.sphere(point, 0.05, RED_500);
-        gizmos.arrow(point, point + normal.normalize() * 0.5, PINK_100);
+fn right_click_send_nav_target(
+    mut world: ResMut<World>,
+    mut rover_node: Query<&RoverNodeComponent>,
+    pointers: Query<&PointerInteraction>,
+    mut gizmos: Gizmos,
+    mouse_buttons: Res<ButtonInput<MouseButton>>,
+) {
+    if mouse_buttons.just_released(MouseButton::Right) {
+        for (point, normal) in pointers
+            .iter()
+            .filter_map(|interaction| interaction.get_nearest_hit())
+            .filter_map(|(_entity, hit)| hit.position.zip(hit.normal))
+        {
+            gizmos.sphere(point, 0.05, RED_500);
+            let target_latlon = xyz_to_latlon(point);
+            info!(
+                "Clicked {:?} ({},{})",
+                point, target_latlon.0, target_latlon.1
+            );
+            rover_node
+                .get(world.rover.entity.unwrap())
+                .unwrap()
+                .0
+                .send_nav_target(target_latlon.0, target_latlon.1);
+        }
     }
 }
 
