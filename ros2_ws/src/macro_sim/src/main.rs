@@ -1,4 +1,5 @@
-use std::f32::consts::PI;
+use std::f32::consts::PI as F_PI;
+use std::f64::consts::PI as D_PI;
 use std::sync::LazyLock;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -40,6 +41,7 @@ fn main() {
         .add_systems(Update, ros_spin_once)
         .add_systems(Update, update_rover_position)
         .add_systems(Update, right_click_send_nav_target)
+        .add_systems(Update, periodically_publish_current_pose)
         .add_systems(Update, orbit)
         .run();
 }
@@ -93,6 +95,7 @@ struct RoverNode {
     velocity_subscription: Arc<rclrs::Subscription<TwistMsg>>,
     velocity: Arc<Mutex<Option<TwistMsg>>>,
 
+    current_pose_publisher: Arc<rclrs::Publisher<GeoPose2DMsg>>,
     send_nav_target_client: Arc<rclrs::Client<SendNavTarget>>,
 }
 
@@ -109,6 +112,9 @@ impl RoverNode {
             })
             .unwrap();
 
+        let current_pose_publisher = node
+            .create_publisher::<GeoPose2DMsg>("/current_pose", rclrs::QOS_PROFILE_DEFAULT)
+            .unwrap();
         let send_nav_target_client = node
             .create_client::<SendNavTarget>("/send_nav_target")
             .unwrap();
@@ -117,12 +123,17 @@ impl RoverNode {
             node,
             velocity_subscription,
             velocity,
+            current_pose_publisher,
             send_nav_target_client,
         }
     }
 
     fn get_velocity(&self) -> Option<TwistMsg> {
         self.velocity.lock().unwrap().clone()
+    }
+
+    fn publish_current_pose(&self, position: &GeoPose2DMsg) {
+        self.current_pose_publisher.publish(position);
     }
 
     fn send_nav_target(&self, lat: f64, lon: f64) {
@@ -155,7 +166,7 @@ impl RosNodeAccessor for RoverNode {
 
 fn setup_cameras(mut commands: Commands) {
     commands.spawn((
-        Transform::from_translation(Vec3::new(0.0, 0.0, 1.0)).looking_at(Vec3::ZERO, Vec3::Y),
+        Transform::from_translation(Vec3::new(1.0, 0.0, 0.0)).looking_at(Vec3::ZERO, Vec3::Y),
         Camera3d::default(),
     ));
 }
@@ -175,11 +186,8 @@ fn setup_rover(
         ..Default::default()
     });
 
-    let rover_velocity_listener = Arc::new(RoverNode::new(
-        &ros.context,
-        "rover_velocity",
-        "rover_velocity_cmd",
-    ));
+    let rover_velocity_listener =
+        Arc::new(RoverNode::new(&ros.context, "rover_velocity", "cmd_vel"));
     ros.nodes
         .lock()
         .unwrap()
@@ -194,7 +202,7 @@ fn setup_rover(
             ))
             .with_children(|parent| {
                 parent.spawn((
-                    Transform::from_rotation(Quat::from_rotation_x(0.5 * PI)),
+                    Transform::from_rotation(Quat::from_rotation_x(-0.5 * F_PI)),
                     Mesh3d(mesh),
                     MeshMaterial3d(green_mtl),
                 ));
@@ -234,8 +242,8 @@ fn setup_world(
 fn xyz_to_latlon(xyz: Vec3) -> (f64, f64) {
     /* Convert from bevy coordinates to common coordinates */
     let x = xyz.x;
-    let y = xyz.z;
-    let z = -xyz.y;
+    let y = -xyz.z;
+    let z = xyz.y;
 
     let lat = (z / ASTEROID_SURFACE_RADIUS as f32).asin().to_degrees() as f64;
     let lon = (y / ASTEROID_SURFACE_RADIUS as f32)
@@ -259,12 +267,12 @@ fn latlon_to_xyz(lat: f64, lon: f64) -> Vec3 {
     Vec3::new(x, z, -y)
 }
 
-/// 0 azimuth is facing east while 0 heading is facing north
+/// azimuth is clockwise from north, heading is counter-clockwise from north
 fn heading_to_azimuth(heading: f64) -> f64 {
-    heading + 90.0
+    2.0 * D_PI - heading
 }
 fn azimuth_to_heading(azimuth: f64) -> f64 {
-    azimuth - 90.0
+    2.0 * D_PI - azimuth
 }
 
 fn update_rover_position(
@@ -284,15 +292,19 @@ fn update_rover_position(
     // info!("Twist: {:?}", twist);
 
     let dist = twist.linear.x * (time.delta_secs() as f64);
+    let heading_change = twist.angular.z.to_degrees() * (time.delta_secs() as f64);
 
     /** FIXME: Sloppy math! **/
-    let rover_azimuth = heading_to_azimuth(rover.heading);
+    let rover_azimuth = heading_to_azimuth(rover.heading + heading_change / 2.0);
     let (lat, lon, az) = GEODESIC.direct(rover.latlon.0 .0, rover.latlon.0 .1, rover_azimuth, dist);
-    let (look_at_lat, look_at_lon, _) =
-        GEODESIC.direct(rover.latlon.0 .0, rover.latlon.0 .1, rover_azimuth, 0.01);
     rover.latlon = LatLong((lat, lon));
-    rover.heading =
-        azimuth_to_heading(az) + twist.angular.z.to_degrees() * (time.delta_secs() as f64);
+    rover.heading = azimuth_to_heading(az) + heading_change / 2.0;
+    let (look_at_lat, look_at_lon, _) = GEODESIC.direct(
+        rover.latlon.0 .0,
+        rover.latlon.0 .1,
+        heading_to_azimuth(rover.heading),
+        0.01,
+    );
     let rover_position = latlon_to_xyz(rover.latlon.0 .0, rover.latlon.0 .1);
     /*****/
 
@@ -309,6 +321,25 @@ fn update_rover_position(
         latlon_to_xyz(look_at_lat, look_at_lon),
         Dir3::new(up).unwrap(),
     )
+}
+
+fn periodically_publish_current_pose(
+    mut rover_node: Query<&RoverNodeComponent>,
+    mut world: ResMut<World>,
+) {
+    let rover = &world.rover;
+    let rover_node = rover_node.get(world.rover.entity.unwrap()).unwrap();
+    let latlon = rover.latlon.0;
+    let heading = rover.heading;
+    let msg = GeoPose2DMsg {
+        position: GeoPoint {
+            latitude: latlon.0,
+            longitude: latlon.1,
+            altitude: 0.0,
+        },
+        heading: heading as f32,
+    };
+    rover_node.0.publish_current_pose(&msg);
 }
 
 fn right_click_send_nav_target(

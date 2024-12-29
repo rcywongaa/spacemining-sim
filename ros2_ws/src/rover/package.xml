@@ -9,6 +9,7 @@
 
   <depend>geographiclib</depend>
   <depend>rover_interfaces</depend>
+  <depend>angles</depend>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
