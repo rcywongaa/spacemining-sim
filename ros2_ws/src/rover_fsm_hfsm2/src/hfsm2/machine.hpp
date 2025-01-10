@@ -39,6 +39,7 @@
 
 #include <stdint.h>			// uint32_t, uint64_t
 #include <string.h>			// memcpy_s()
+#include <utility>      // std::forward()
 
 #include <new>
 #ifndef HFSM2_DISABLE_TYPEINDEX
@@ -1825,7 +1826,7 @@ typename DynamicArrayT<T, NC_>::Index
 DynamicArrayT<T, NC_>::emplace(TArgs&&... args) noexcept {
 	HFSM2_ASSERT(_count < CAPACITY);
 
-	new (&_items[_count]) Item{forward<TArgs>(args)...};
+	new (&_items[_count]) Item{std::forward<TArgs>(args)...};
 
 	return _count++;
 }
