@@ -8,6 +8,7 @@ endif()
 # find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(rclcpp_action REQUIRED)
 find_package(rover_interfaces REQUIRED)
 find_package(angles REQUIRED)
 
@@ -19,7 +20,7 @@ include_directories (${GeographicLib_INCLUDE_DIRS})
 add_executable (${PROJECT_NAME} src/main.cpp)
 
 # ament_target_dependencies(${PROJECT_NAME} rclcpp rover_interfaces ${GeographicLib_LIBRARIES})
-ament_target_dependencies(${PROJECT_NAME} rclcpp rover_interfaces angles)
+ament_target_dependencies(${PROJECT_NAME} rclcpp rover_interfaces angles rclcpp_action)
 target_link_libraries(${PROJECT_NAME} ${GeographicLib_LIBRARIES})
 
 install(TARGETS
