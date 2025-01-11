@@ -81,37 +81,55 @@ private:
   std::optional<MsgType> last_msg;
 };
 
+template <typename SrvType> class ServiceRequestListener {
+public:
+  void init(std::shared_ptr<rclcpp::Node> node, const std::string &service_name) {
+    request.reset();
+    service = node->create_service<SrvType>(service_name, std::bind(&ServiceRequestListener::cb, this, _1, _2));
+  }
+
+  void deinit() {
+    service.reset();
+    request.reset();
+  }
+
+  std::optional<typename SrvType::Request::SharedPtr> pop() {
+    auto ret = request;
+    request.reset();
+    return ret;
+  }
+
+private:
+  virtual void cb(const typename SrvType::Request::SharedPtr req, typename SrvType::Response::SharedPtr res) {
+    request = req;
+  }
+
+  typename rclcpp::Service<SrvType>::SharedPtr service;
+  std::optional<typename SrvType::Request::SharedPtr> request;
+};
+
 struct SsManual : FSM::State {
   void enter(Control &control) {
     node = control.context().node;
     RCLCPP_INFO(node->get_logger(), "Start manual...");
-    target_pose = {};
-    nav_target_service = node->create_service<rover_interfaces::srv::SendNavTarget>(
-        "send_nav_target", std::bind(&SsManual::nav_target_cb, this, _1, _2));
+    nav_target_listener.init(node, "/send_nav_target");
+  }
+
+  void exit(Control &control) {
+    nav_target_listener.deinit();
   }
 
   void update(FullControl &control) {
-    if (target_pose) {
-      RCLCPP_INFO(node->get_logger(), "SsManual: Received manual input...");
-      control.changeWith<LsManualTask>(*target_pose);
-      target_pose = {};
+    if (auto nav_target = nav_target_listener.pop()) {
+      RCLCPP_INFO(node->get_logger(), "SsManual: Received manual input");
+      control.changeWith<LsManualTask>(nav_target.value()->target);
       return;
     }
   }
 
 private:
-  void nav_target_cb(
-      const std::shared_ptr<rover_interfaces::srv::SendNavTarget::Request> request,
-      std::shared_ptr<rover_interfaces::srv::SendNavTarget::Response> response) {
-    RCLCPP_INFO(node->get_logger(), "Received target pose: %f, %f",
-                request->target.position.latitude,
-                request->target.position.longitude);
-    target_pose = request->target;
-  }
-
   std::shared_ptr<rclcpp::Node> node;
-  rclcpp::Service<rover_interfaces::srv::SendNavTarget>::SharedPtr nav_target_service;
-  std::optional<GeoPose2D> target_pose;
+  ServiceRequestListener<rover_interfaces::srv::SendNavTarget> nav_target_listener;
 };
 
 const unsigned int MANUAL_TIMEOUT_SEC = 10;
@@ -191,38 +209,25 @@ struct SsAutonomous : FSM::State {
   void enter(Control &control) {
     node = control.context().node;
     RCLCPP_INFO(node->get_logger(), "Start autonomous...");
-    target_pose = {};
-    nav_target_service = control.context().node->create_service<rover_interfaces::srv::SendNavTarget>(
-        "send_nav_target", std::bind(&SsAutonomous::nav_target_cb, this, _1, _2));
+    nav_target_listener.init(node, "/send_nav_target");
   }
 
   void exit(Control &control) {
-    nav_target_service.reset();
+    nav_target_listener.deinit();
   }
 
   void update(FullControl &control) {
     /* Manual commands always have priority */
-    if (target_pose) {
-      RCLCPP_INFO(control.context().node->get_logger(), "Received manual input...");
-      control.changeWith<LsManualTask>(*target_pose);
+    if (auto nav_target = nav_target_listener.pop()) {
+      RCLCPP_INFO(control.context().node->get_logger(), "SsAutonomous : Received manual input...");
+      control.changeWith<LsManualTask>(nav_target.value()->target);
       return;
     }
   }
 
 private:
-  void nav_target_cb(
-      const std::shared_ptr<rover_interfaces::srv::SendNavTarget::Request> request,
-      std::shared_ptr<rover_interfaces::srv::SendNavTarget::Response> response) {
-    RCLCPP_INFO(node->get_logger(), "Received target pose: %f, %f",
-                request->target.position.latitude,
-                request->target.position.longitude);
-    target_pose = request->target;
-  }
-
   std::shared_ptr<rclcpp::Node> node;
-  rclcpp::Service<rover_interfaces::srv::SendNavTarget>::SharedPtr nav_target_service;
-  std::optional<GeoPose2D> target_pose;
-
+  ServiceRequestListener<rover_interfaces::srv::SendNavTarget> nav_target_listener;
 };
 
 /**
