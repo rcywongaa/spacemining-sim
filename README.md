@@ -47,24 +47,30 @@
 - Base motion
 - Gravity
 
+### UI
+- Select Rover
+  - Remote Control
+  - Switch Mode
+
 ## Rovers (Space ROS)
 ### Topics
 Publish:
-- Battery Level
-- Position
+- Command Velocity
+- ~~Battery Level~~
 
 Subscribe:
-- Costmap
+- ~~Costmap~~
 
 ### Services
-- Set battery level
+- Set Nav Target (PoseStamped)
+- ~~Set battery level~~
 
 ### Actions
-- Go To Position
-- Excavate / Operate Tool
+- ~~Go To Position~~
+- ~~Excavate / Operate Tool~~
 
 ### Hierarchical Finite State Machine Behavior Tree Hybrid (HFSMBTH)
-https://www.youtube.com/watch?v=Qq_xX1JCreI&t=1167s
+<https://www.youtube.com/watch?v=Qq_xX1JCreI&t=1167s>
 
 SMACC2 + BehaviorTree.CPP
 
@@ -90,8 +96,8 @@ Use MoveIt2, Nav2 and Gazebo to simulate certain robot behaviors
 - [x] Bare minimum macro sim
   - [x] Single excavator with manual controls
   - [x] Interface with ROS using `ros2-rust`
-- [] Set up robot running Space ROS
-  - [] Create HFSMBTH
+- [x] Set up robot running Space ROS
+- [] Create HFSMBTH
 - [] Set up micro sim (Gazebo)
 - [] Set up MoveIt2
 - [] Set up Nav2

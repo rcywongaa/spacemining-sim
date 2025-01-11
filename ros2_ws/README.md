@@ -7,12 +7,14 @@
    ```
    colcon build --allow-overriding action_msgs builtin_interfaces geometry_msgs rcl_interfaces rosgraph_msgs rosidl_default_generators rosidl_default_runtime std_msgs test_interface_files test_msgs unique_identifier_msgs --packages-up-to macro_sim
    ```
+# Conventions
+`heading` is counterclockwise, `azimuth` is clockwise, both are between [-pi, pi].
 
-# Caveats
+# Notes
 Make sure msg files between `ros2-rust` and `spaceros` are compatible
-```
---allow-overriding action_msgs builtin_interfaces geometry_msgs rcl_interfaces rosgraph_msgs rosidl_default_generators rosidl_default_runtime std_msgs test_interface_files test_msgs unique_identifier_msgs
-```
+
+SpaceROS in general does not use ROS packages available from the package manager (`apt`).
+Instead, the dependencies are cloned and built as part of the image.
 
 # Troubleshooting
 - ```
@@ -36,3 +38,7 @@ Make sure msg files between `ros2-rust` and `spaceros` are compatible
   ```
   println!("cargo:rustc-link-lib=dylib=rmw_cyclonedds_cpp");
   ```
+- `error: linking with `cc` failed: exit status: 1`
+
+  Perform a clean rebuild with `rm -rf build install log .cargo`.
+  Also make sure `$LD_LIBRARY_PATH` ONLY contains stuff from the `/opt/ros/` directory and nothing from the current `install` directory.
