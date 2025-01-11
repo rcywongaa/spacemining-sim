@@ -31,7 +31,17 @@ static GEODESIC: LazyLock<Geodesic> = LazyLock::new(|| Geodesic::new(ASTEROID_RA
 
 fn main() {
     App::new()
-        .add_plugins((DefaultPlugins, MeshPickingPlugin))
+        .add_plugins((
+            DefaultPlugins.set(WindowPlugin {
+                primary_window: Some(Window {
+                    resolution: (640.0, 640.0).into(),
+                    title: "Macro Simulation".to_string(),
+                    ..default()
+                }),
+                ..default()
+            }),
+            MeshPickingPlugin,
+        ))
         .init_resource::<CameraSettings>()
         .init_resource::<World>()
         .insert_resource(Ros::new())
