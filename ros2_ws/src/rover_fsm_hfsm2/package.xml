@@ -8,6 +8,7 @@
   <license>TODO: License declaration</license>
 
   <depend>rclcpp</depend>
+  <depend>rclcpp_action</depend>
   <depend>rover_interfaces</depend>
   <depend>sensor_msgs</depend>
 

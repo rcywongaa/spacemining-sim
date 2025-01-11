@@ -1,5 +1,5 @@
 #include <chrono>
-#include <thread>
+#include <atomic>
 #include <memory>
 #include <functional>
 #include <variant>
@@ -45,22 +45,45 @@ using M = hfsm2::MachineT<Config>;
 using FSM = M::PeerRoot <
               M::Composite<S(SsAutonomous),
                   S(LsWorking),
-                  S(LsCharging)
+                  S(LsCharging),
+                  S(LsSleeping)
               >,
               M::Composite<S(SsManual),
                   S(LsManualTask),
                   S(LsIdle)
-              >,
-              S(LsSleep)
+              >
             >;
 /* clang-format on */
 
 #undef S
 /*********************/
 
+template <typename MsgType> class TopicListener {
+public:
+  void init(std::shared_ptr<rclcpp::Node> node, const std::string &topic_name) {
+    sub = node->create_subscription<MsgType>(
+        topic_name, 1, std::bind(&TopicListener::cb, this, std::placeholders::_1));
+  }
+  void deinit() {
+    sub.reset();
+  }
+
+  std::optional<MsgType> get_msg() {
+    return last_msg;
+  }
+
+private:
+  virtual void cb(const typename MsgType::SharedPtr msg) {
+    last_msg = *msg;
+  }
+
+  typename rclcpp::Subscription<MsgType>::SharedPtr sub;
+  std::optional<MsgType> last_msg;
+};
+
 struct SsManual : FSM::State {
   void enter(Control &control) {
-    printf("Start manual...\n");
+    RCLCPP_INFO(control.context().node->get_logger(), "Start manual...");
   }
 
   void update(FullControl &control) {
@@ -69,15 +92,16 @@ struct SsManual : FSM::State {
 
 const unsigned int MANUAL_TIMEOUT_SEC = 10;
 struct LsIdle : FSM::State {
-  void enter(Control &_) {
-    printf("Finished task, idling...\n");
+  void enter(Control &control) {
+    RCLCPP_INFO(control.context().node->get_logger(), "Finished task, idling...");
     start_time = std::chrono::system_clock::now();
   }
 
   void update(FullControl &control) {
     if (std::chrono::system_clock::now() - start_time > std::chrono::seconds(MANUAL_TIMEOUT_SEC)) {
-      printf("No input for %u secs, switching to autonomous\n", MANUAL_TIMEOUT_SEC);
+      RCLCPP_INFO(control.context().node->get_logger(), "No input for %u secs, switching to autonomous", MANUAL_TIMEOUT_SEC);
       control.changeTo<SsAutonomous>();
+      return;
     }
   }
 
@@ -87,81 +111,91 @@ private:
 
 struct LsWorking : FSM::State {
   void enter(Control &control) {
-    printf("Start working...\n");
-    start_time = std::chrono::system_clock::now();
+    RCLCPP_INFO(control.context().node->get_logger(), "Start working...");
+    battery_listener.init(control.context().node, "/battery_state");
+  }
+
+  void exit(Control &control) {
+    battery_listener.deinit();
   }
 
   void update(FullControl &control) {
-    if (std::chrono::system_clock::now() - start_time > std::chrono::seconds(3)) {
-      printf("Low battery, switching to charging\n");
-      control.changeTo<LsCharging>();
+    if (auto battery_msg = battery_listener.get_msg()) {
+      if (battery_msg->percentage < 0.3) {
+        RCLCPP_INFO(control.context().node->get_logger(), "Low battery, switching to charging");
+        control.changeTo<LsCharging>();
+        return;
+      }
     }
   }
 
 private:
-  std::chrono::time_point<std::chrono::system_clock> start_time;
+  TopicListener<sensor_msgs::msg::BatteryState> battery_listener;
 };
 
 struct LsCharging : FSM::State {
   void enter(Control &control) {
-    printf("Start charging...\n");
-    start_time = std::chrono::system_clock::now();
+    RCLCPP_INFO(control.context().node->get_logger(), "Start charging...");
+    battery_listener.init(control.context().node, "/battery_state");
+  }
+
+  void exit(Control &control) {
+    battery_listener.deinit();
   }
 
   void update(FullControl &control) {
-    if (std::chrono::system_clock::now() - start_time > std::chrono::seconds(2)) {
-      printf("Fully charged, switching to working\n");
-      control.changeTo<LsWorking>();
+    if (auto battery_msg = battery_listener.get_msg()) {
+      if (battery_msg->percentage < 0.2) {
+        RCLCPP_INFO(control.context().node->get_logger(), "Battery critical, switching to sleeping");
+        control.changeTo<LsSleeping>();
+        return;
+      }
+      if (battery_msg->percentage >= 1.0) {
+        RCLCPP_INFO(control.context().node->get_logger(), "Fully charged, switching to working");
+        control.changeTo<LsWorking>();
+        return;
+      }
     }
+    // TODO: Travel to charging station and charge
   }
 
 private:
-  std::chrono::time_point<std::chrono::system_clock> start_time;
+  TopicListener<sensor_msgs::msg::BatteryState> battery_listener;
 };
 
 struct SsAutonomous : FSM::State {
-
   void enter(Control &control) {
-    printf("Start autonomous...\n");
     node = control.context().node;
+    RCLCPP_INFO(node->get_logger(), "Start autonomous...");
     target_pose = {};
-    battery_sub = node->create_subscription<sensor_msgs::msg::BatteryState>(
-        "/battery_state", 1, std::bind(&SsAutonomous::battery_cb, this, std::placeholders::_1));
-
-    nav_target_service = node->create_service<rover_interfaces::srv::SendNavTarget>(
+    nav_target_service = control.context().node->create_service<rover_interfaces::srv::SendNavTarget>(
         "send_nav_target", std::bind(&SsAutonomous::nav_target_cb, this, _1, _2));
+  }
 
+  void exit(Control &control) {
+    nav_target_service.reset();
   }
 
   void update(FullControl &control) {
-    if (battery_msg) {
-      if (battery_msg->percentage < 0.2) {
-        printf("Low battery, switching to charging\n");
-        control.changeTo<LsCharging>();
-      }
-    }
+    /* Manual commands always have priority */
     if (target_pose) {
-      printf("Navigating to target...\n");
+      RCLCPP_INFO(control.context().node->get_logger(), "Received manual input...");
       control.changeWith<LsManualTask>(*target_pose);
+      return;
     }
   }
 
 private:
-  void battery_cb(sensor_msgs::msg::BatteryState::SharedPtr msg) {
-    RCLCPP_DEBUG_THROTTLE(node->get_logger(), *(node->get_clock()), 1000, "Received battery msg: %f", msg->percentage);
-    battery_msg = *msg;
-  }
-
   void nav_target_cb(
       const std::shared_ptr<rover_interfaces::srv::SendNavTarget::Request> request,
       std::shared_ptr<rover_interfaces::srv::SendNavTarget::Response> response) {
+    RCLCPP_INFO(node->get_logger(), "Received target pose: %f, %f",
+                request->target.position.latitude,
+                request->target.position.longitude);
     target_pose = request->target;
   }
 
   std::shared_ptr<rclcpp::Node> node;
-  rclcpp::Subscription<sensor_msgs::msg::BatteryState>::SharedPtr battery_sub;
-  std::optional<sensor_msgs::msg::BatteryState> battery_msg;
-
   rclcpp::Service<rover_interfaces::srv::SendNavTarget>::SharedPtr nav_target_service;
   std::optional<GeoPose2D> target_pose;
 
@@ -172,7 +206,6 @@ private:
  *
  */
 struct LsManualTask : FSM::State {
-
   void entryGuard(GuardControl &control) {
 		const auto& pendingTransitions = control.pendingTransitions();
 
@@ -185,24 +218,14 @@ struct LsManualTask : FSM::State {
   }
   void enter(Control &control) {
     node = control.context().node;
-    navigate_to_position_client = rclcpp_action::create_client<
-        NavigateToPosition>(node,
-                                                      "navigate_to_position");
-    navigate_to_position_client->wait_for_action_server();
-  }
-
-  void update(FullControl &control) {
-  }
-
-private:
-  void nav_target_cb(
-      const std::shared_ptr<rover_interfaces::srv::SendNavTarget::Request> request,
-      std::shared_ptr<rover_interfaces::srv::SendNavTarget::Response> response) {
-    RCLCPP_INFO(node->get_logger(), "Received target pose: %f, %f",
-                request->target.position.latitude,
-                request->target.position.longitude);
+    RCLCPP_INFO(node->get_logger(), "Begin ManualTask...");
+    is_done = false;
+    navigate_to_position_client = rclcpp_action::create_client<NavigateToPosition>(node, "navigate_to_position");
+    while (rclcpp::ok() && !navigate_to_position_client->wait_for_action_server(std::chrono::seconds(1))) {
+      RCLCPP_WARN(node->get_logger(), "Waiting for action server to appear...");
+    }
     auto goal_msg = NavigateToPosition::Goal();
-    goal_msg.target = request->target;
+    goal_msg.target = target_pose;
     auto send_goal_options = rclcpp_action::Client<NavigateToPosition>::SendGoalOptions();
     send_goal_options.goal_response_callback = std::bind(&LsManualTask::goal_response_callback, this, _1);
     send_goal_options.feedback_callback =
@@ -212,6 +235,13 @@ private:
     navigate_to_position_client->async_send_goal(goal_msg, send_goal_options);
   }
 
+  void update(FullControl &control) {
+    if (is_done) {
+      control.changeTo<LsIdle>();
+    }
+  }
+
+private:
   void goal_response_callback(const rclcpp_action::ClientGoalHandle<NavigateToPosition>::SharedPtr& goal_handle) {
     if (!goal_handle) {
       RCLCPP_ERROR(node->get_logger(), "Goal was rejected by server");
@@ -223,11 +253,7 @@ private:
   void feedback_callback(
       rclcpp_action::ClientGoalHandle<NavigateToPosition>::SharedPtr,
       const std::shared_ptr<const NavigateToPosition::Feedback> feedback) {
-
     //TODO
-    // RCLCPP_INFO(node->get_logger(), "Received feedback: %f, %f",
-    //             feedback->current.position.latitude,
-    //             feedback->current.position.longitude);
   }
 
   void result_callback(const rclcpp_action::ClientGoalHandle<NavigateToPosition>::WrappedResult &result) {
@@ -245,27 +271,26 @@ private:
         RCLCPP_ERROR(node->get_logger(), "Unknown result code");
         break;
     }
+    is_done = true;
   }
 
   std::shared_ptr<rclcpp::Node> node;
   GeoPose2D target_pose;
   rclcpp_action::Client<NavigateToPosition>::SharedPtr navigate_to_position_client;
+  std::atomic_bool is_done;
 };
 
-struct LsSleep : FSM::State {
+struct LsSleeping : FSM::State {
   void enter(Control &control) {
-    printf("Start sleep...\n");
+    RCLCPP_INFO(control.context().node->get_logger(), "Start sleep...");
   }
 
   void update(FullControl &control) {
-    // if (std::chrono::system_clock::now() - start_time > std::chrono::seconds(2)) {
-    //   printf("Woke up, switching to working\n");
-    //   control.changeTo<LsWorking>();
-    // }
   }
 };
 
-int main() {
+int main(int argc, char * argv[]) {
+  rclcpp::init(argc, argv);
 	// shared data storage instance
   auto node = std::make_shared<rclcpp::Node>("rover_fsm");
 	Context context{node};
