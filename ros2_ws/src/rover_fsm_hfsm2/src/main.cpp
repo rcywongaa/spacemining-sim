@@ -83,11 +83,35 @@ private:
 
 struct SsManual : FSM::State {
   void enter(Control &control) {
-    RCLCPP_INFO(control.context().node->get_logger(), "Start manual...");
+    node = control.context().node;
+    RCLCPP_INFO(node->get_logger(), "Start manual...");
+    target_pose = {};
+    nav_target_service = node->create_service<rover_interfaces::srv::SendNavTarget>(
+        "send_nav_target", std::bind(&SsManual::nav_target_cb, this, _1, _2));
   }
 
   void update(FullControl &control) {
+    if (target_pose) {
+      RCLCPP_INFO(node->get_logger(), "SsManual: Received manual input...");
+      control.changeWith<LsManualTask>(*target_pose);
+      target_pose = {};
+      return;
+    }
   }
+
+private:
+  void nav_target_cb(
+      const std::shared_ptr<rover_interfaces::srv::SendNavTarget::Request> request,
+      std::shared_ptr<rover_interfaces::srv::SendNavTarget::Response> response) {
+    RCLCPP_INFO(node->get_logger(), "Received target pose: %f, %f",
+                request->target.position.latitude,
+                request->target.position.longitude);
+    target_pose = request->target;
+  }
+
+  std::shared_ptr<rclcpp::Node> node;
+  rclcpp::Service<rover_interfaces::srv::SendNavTarget>::SharedPtr nav_target_service;
+  std::optional<GeoPose2D> target_pose;
 };
 
 const unsigned int MANUAL_TIMEOUT_SEC = 10;
@@ -216,6 +240,7 @@ struct LsManualTask : FSM::State {
       control.cancelPendingTransitions();
     }
   }
+
   void enter(Control &control) {
     node = control.context().node;
     RCLCPP_INFO(node->get_logger(), "Begin ManualTask...");
@@ -233,6 +258,15 @@ struct LsManualTask : FSM::State {
     send_goal_options.result_callback =
       std::bind(&LsManualTask::result_callback, this, _1);
     navigate_to_position_client->async_send_goal(goal_msg, send_goal_options);
+  }
+
+  void reenter(Control &control) {
+    enter(control);
+  }
+
+  void exit(Control &control) {
+    navigate_to_position_client->async_cancel_all_goals();
+    navigate_to_position_client.reset();
   }
 
   void update(FullControl &control) {
