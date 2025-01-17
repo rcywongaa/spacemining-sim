@@ -1,0 +1,73 @@
+<root BTCPP_format="4">
+  <BehaviorTree ID="ExcavatorBT">
+    <Sequence name="main_sequence">
+      <GoToWorksite name="go_to_worksite" />
+      <Fallback name="arm_sequence_and_recovery">
+        <Sequence name="arm_sequence_with_retry">
+          <RetryUntilSuccessful num_attempts="3" name="assume_ready_pose_with_retry">
+            <AssumeReadyPose />
+          </RetryUntilSuccessful>
+          <RetryUntilSuccessful num_attempts="3" name="excavate_with_retry">
+            <Excavate />
+          </RetryUntilSuccessful>
+        </Sequence>
+        <Sequence name="recovery">
+          <Fallback name="critical_fail_if_recovery_fails">
+            <RetryUntilSuccessful num_attempts="3" name="recovery">
+              <Stow name="recovery_stow" />
+            </RetryUntilSuccessful>
+            <CriticalFail />
+          </Fallback>
+          <Fail />
+        </Sequence>
+      </Fallback>
+      <Fallback name="critical_fail_if_stow_fails">
+        <RetryUntilSuccessful num_attempts="3" name="stow_with_retry">
+          <Stow />
+        </RetryUntilSuccessful>
+        <CriticalFail />
+      </Fallback>
+      <SendSuccess />
+
+      <!-- <Fallback name="assume_ready_pose_with_retry">
+        <AssumeReadyPose name="assume_ready_pose1" />
+        <AssumeReadyPose name="assume_ready_pose2" />
+        <AssumeReadyPose name="assume_ready_pose3" />
+        <Sequence name="recover">
+          <Fallback>
+            <Stow name="recovery_stow1" />
+            <Stow name="recovery_stow2" />
+            <Stow name="recovery_stow3" />
+            <SendCriticalFail name="critical_fail" />
+          </Fallback>
+          <SendFail name="fail" />
+        </Sequence>
+      </Fallback>
+      <Fallback name="excavate_with_retry">
+        <Excavate name="excavate1" />
+        <Excavate name="excavate2" />
+        <Excavate name="excavate3" />
+        <Sequence name="recover">
+          <Fallback>
+            <Stow name="recovery_stow1" />
+            <Stow name="recovery_stow2" />
+            <Stow name="recovery_stow3" />
+            <SendCriticalFail name="critical_fail" />
+          </Fallback>
+          <SendFail name="fail" />
+        </Sequence>
+      </Fallback> -->
+    </Sequence>
+  </BehaviorTree>
+  <BehaviorTree ID="StowBT">
+    <Fallback>
+      <Sequence>
+        <RetryUntilSuccessful num_attempts="3">
+          <Stow />
+        </RetryUntilSuccessful>
+        <SendSuccess />
+      </Sequence>
+      <CriticalFail />
+    </Fallback>
+  </BehaviorTree>
+</root>
