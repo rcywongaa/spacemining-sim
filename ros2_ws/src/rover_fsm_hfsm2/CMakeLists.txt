@@ -11,9 +11,10 @@ find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
 find_package(rover_interfaces REQUIRED)
 find_package(sensor_msgs REQUIRED)
+find_package(work_bt REQUIRED)
 
 add_executable (${PROJECT_NAME} src/main.cpp)
-ament_target_dependencies(${PROJECT_NAME} rclcpp rover_interfaces sensor_msgs rclcpp_action)
+ament_target_dependencies(${PROJECT_NAME} rclcpp rover_interfaces sensor_msgs rclcpp_action work_bt)
 
 install(TARGETS
   ${PROJECT_NAME}

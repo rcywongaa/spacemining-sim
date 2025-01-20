@@ -13,10 +13,12 @@
 #include "rover_interfaces/srv/send_nav_target.hpp"
 #include "rover_interfaces/action/navigate_to_position.hpp"
 #include "sensor_msgs/msg/battery_state.hpp"
+#include "work_bt/action/do_work.hpp"
 
 using namespace std::placeholders;
 using NavigateToPosition = rover_interfaces::action::NavigateToPosition;
 using GeoPose2D = rover_interfaces::msg::GeoPose2D;
+using DoWork = work_bt::action::DoWork;
 
 /********** Define State Machine ***********/
 struct Context {
@@ -108,6 +110,10 @@ private:
   std::optional<typename SrvType::Request::SharedPtr> request;
 };
 
+/**
+ * FIXME: All states should initialize ROS stuff in constructor
+ * and check/wait for server availability in entryGuard
+ */
 struct SsManual : FSM::State {
   void enter(Control &control) {
     node = control.context().node;
@@ -153,12 +159,13 @@ private:
 
 struct LsWorking : FSM::State {
   void enter(Control &control) {
-    RCLCPP_INFO(control.context().node->get_logger(), "Start working...");
+    node = control.context().node;
+    RCLCPP_INFO(node->get_logger(), "Start working...");
     battery_listener.init(control.context().node, "/battery_state");
-  }
-
-  void exit(Control &control) {
-    battery_listener.deinit();
+    do_work_client = rclcpp_action::create_client<DoWork>(node, "do_work");
+    while (rclcpp::ok() && !do_work_client->wait_for_action_server(std::chrono::seconds(1))) {
+      RCLCPP_WARN(node->get_logger(), "Waiting for action server to appear...");
+    }
   }
 
   void update(FullControl &control) {
@@ -169,10 +176,73 @@ struct LsWorking : FSM::State {
         return;
       }
     }
+
+    {
+      std::scoped_lock lock(mtx);
+      if (!active_goal_handle) {
+        /* If done, restart */
+        auto send_goal_options = rclcpp_action::Client<DoWork>::SendGoalOptions();
+        send_goal_options.goal_response_callback = std::bind(&LsWorking::goal_response_callback, this, _1);
+        send_goal_options.feedback_callback =
+          std::bind(&LsWorking::feedback_callback, this, _1, _2);
+        send_goal_options.result_callback =
+          std::bind(&LsWorking::result_callback, this, _1);
+        do_work_client->async_send_goal(DoWork::Goal(), send_goal_options);
+      }
+    }
+  }
+
+  /* Note exitGuard() is called before exit() */
+  void exitGuard(GuardControl &control) {
+    if (active_goal_handle) {
+      do_work_client->async_cancel_goal(active_goal_handle);
+      control.cancelPendingTransitions();
+    }
+  }
+
+  void exit(Control &control) {
+    battery_listener.deinit();
   }
 
 private:
+  void goal_response_callback(const rclcpp_action::ClientGoalHandle<DoWork>::SharedPtr& goal_handle) {
+    if (!goal_handle) {
+      RCLCPP_WARN(node->get_logger(), "Goal was rejected by server");
+    } else {
+      RCLCPP_INFO(node->get_logger(), "Goal accepted by server");
+      active_goal_handle = goal_handle;
+    }
+  }
+
+  void feedback_callback(
+      rclcpp_action::ClientGoalHandle<DoWork>::SharedPtr,
+      const std::shared_ptr<const DoWork::Feedback> feedback) {
+    //TODO
+  }
+
+  void result_callback(const rclcpp_action::ClientGoalHandle<DoWork>::WrappedResult &result) {
+    switch (result.code) {
+      case rclcpp_action::ResultCode::SUCCEEDED:
+        RCLCPP_INFO(node->get_logger(), "Goal succeeded");
+        break;
+      case rclcpp_action::ResultCode::ABORTED:
+        RCLCPP_ERROR(node->get_logger(), "Goal was aborted");
+        break;
+      case rclcpp_action::ResultCode::CANCELED:
+        RCLCPP_ERROR(node->get_logger(), "Goal was canceled");
+        break;
+      default:
+        RCLCPP_ERROR(node->get_logger(), "Unknown result code");
+        break;
+    }
+    active_goal_handle.reset();
+  }
+
+  std::shared_ptr<rclcpp::Node> node;
   TopicListener<sensor_msgs::msg::BatteryState> battery_listener;
+  rclcpp_action::Client<DoWork>::SharedPtr do_work_client;
+  rclcpp_action::ClientGoalHandle<DoWork>::SharedPtr active_goal_handle;
+  std::mutex mtx;
 };
 
 struct LsCharging : FSM::State {

@@ -64,7 +64,7 @@ public:
     stow_bt = factory.createTree("StowBT");
 
     bt_server = rclcpp_action::create_server<DoWork>(
-        this, "work_bt", std::bind(&ExcavatorWork::handle_goal, this, _1, _2),
+        this, "do_work", std::bind(&ExcavatorWork::handle_goal, this, _1, _2),
         std::bind(&ExcavatorWork::handle_cancel, this, _1),
         std::bind(&ExcavatorWork::handle_accepted, this, _1)
     );
