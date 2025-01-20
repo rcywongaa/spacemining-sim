@@ -153,7 +153,7 @@ private:
       }
     }
 
-    RCLCPP_INFO(this->get_logger(), "Linear velocity: %f, Angular velocity: %f", cmd_vel.linear.x, cmd_vel.angular.z);
+    RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "Linear velocity: %f, Angular velocity: %f", cmd_vel.linear.x, cmd_vel.angular.z);
     velocity_publisher->publish(cmd_vel);
   }
 
