@@ -94,12 +94,12 @@ private:
       return rclcpp_action::CancelResponse::ACCEPT;
     }
     assert(active_goal_handle == goal_handle);
-    is_working = false;
     is_cancelling = true;
     std::thread(&ExcavatorWork::cancel, this).detach();
     return rclcpp_action::CancelResponse::ACCEPT;
   }
   void handle_accepted(const std::shared_ptr<rclcpp_action::ServerGoalHandle<DoWork>> goal_handle) {
+    RCLCPP_INFO(this->get_logger(), "Start executing goal...");
     std::scoped_lock<std::mutex> lock(mtx);
     active_goal_handle = goal_handle;
     is_working = true;
@@ -109,18 +109,39 @@ private:
 
   void run_work_bt() {
     rclcpp::Rate rate(10);
-    while (rclcpp::ok() && work_bt.tickOnce() == BT::NodeStatus::RUNNING) {
+    while (rclcpp::ok()) {
+      {
+        std::scoped_lock<std::mutex> lock(mtx);
+        if (is_cancelling) {
+          is_working = false;
+          return;
+        }
+        if (work_bt.tickOnce() != BT::NodeStatus::RUNNING) {
+          return;
+        }
+      }
       rate.sleep();
     }
   }
 
   void cancel() {
     rclcpp::Rate rate(10);
-    while (rclcpp::ok() && stow_bt.tickOnce() == BT::NodeStatus::RUNNING) {
+    // Wait for work_bt to stop
+    while (rclcpp::ok() && is_working) {
       rate.sleep();
     }
-    active_goal_handle->canceled({});
-    active_goal_handle.reset();
+    while (rclcpp::ok()) {
+      {
+        std::scoped_lock<std::mutex> lock(mtx);
+        if (stow_bt.tickOnce() != BT::NodeStatus::RUNNING) {
+          is_cancelling = false;
+          /* A successful cancel is treated as a succeeded goal */
+          // active_goal_handle->canceled({});
+          return;
+        }
+      }
+      rate.sleep();
+    }
   }
 
   void send_result(work_bt::msg::WorkResult::_result_type result) {
