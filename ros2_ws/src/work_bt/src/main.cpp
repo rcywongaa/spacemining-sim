@@ -11,6 +11,41 @@
 
 using DoWork = work_bt::action::DoWork;
 using namespace std::placeholders;
+using namespace std::chrono_literals;
+
+class SleepBtNode : public BT::StatefulActionNode {
+public:
+  SleepBtNode(const std::string& name, const BT::NodeConfig& config, rclcpp::Node& node, std::chrono::milliseconds duration)
+      : BT::StatefulActionNode(name, config), node(node), duration(duration) {
+  }
+
+  BT::NodeStatus onStart() override {
+    start_time = std::chrono::system_clock::now();
+    return BT::NodeStatus::RUNNING;
+  }
+
+  BT::NodeStatus onRunning() override {
+    RCLCPP_INFO_THROTTLE(node.get_logger(), *node.get_clock(), 500, "Running %s", this->name().c_str());
+    if (std::chrono::system_clock::now() - start_time > duration) {
+      return BT::NodeStatus::SUCCESS;
+    } else {
+      return BT::NodeStatus::RUNNING;
+    }
+  }
+
+  void onHalted() override {}
+
+  /* Required implementation */
+  static BT::PortsList providedPorts()
+  {
+    return {};
+  }
+
+private:
+  rclcpp::Node& node;
+  std::chrono::system_clock::time_point start_time;
+  std::chrono::milliseconds duration;
+};
 
 class ExcavatorWork : public rclcpp::Node {
 public:
@@ -105,26 +140,6 @@ private:
   std::atomic_bool is_cancelling;
 
   /********** BT Functions **********/
-  BT::NodeStatus GoToWorksite(BT::TreeNode &self) {
-    RCLCPP_INFO(this->get_logger(), "GoToWorksite");
-    return BT::NodeStatus::SUCCESS;
-  }
-
-  BT::NodeStatus AssumeReadyPose(BT::TreeNode &self) {
-    RCLCPP_INFO(this->get_logger(), "AssumeReadyPose");
-    return BT::NodeStatus::SUCCESS;
-  }
-
-  BT::NodeStatus Excavate(BT::TreeNode &self) {
-    RCLCPP_INFO(this->get_logger(), "Excavate");
-    return BT::NodeStatus::SUCCESS;
-  }
-
-  BT::NodeStatus Stow(BT::TreeNode &self) {
-    RCLCPP_INFO(this->get_logger(), "Stow");
-    return BT::NodeStatus::SUCCESS;
-  }
-
   BT::NodeStatus SendSuccess(BT::TreeNode &self) {
     RCLCPP_INFO(this->get_logger(), "SendSuccess");
     send_result(work_bt::msg::WorkResult::SUCCESS);
@@ -144,10 +159,10 @@ private:
   }
 
   void setup(BT::BehaviorTreeFactory& factory) {
-    factory.registerSimpleAction("GoToWorksite", std::bind(&ExcavatorWork::GoToWorksite, this, _1));
-    factory.registerSimpleAction("AssumeReadyPose", std::bind(&ExcavatorWork::AssumeReadyPose, this, _1));
-    factory.registerSimpleAction("Excavate", std::bind(&ExcavatorWork::Excavate, this, _1));
-    factory.registerSimpleAction("Stow", std::bind(&ExcavatorWork::Stow, this, _1));
+    factory.registerNodeType<SleepBtNode>("GoToWorksite", std::ref(*this), 5000ms);
+    factory.registerNodeType<SleepBtNode>("AssumeReadyPose", std::ref(*this), 2000ms);
+    factory.registerNodeType<SleepBtNode>("Excavate", std::ref(*this), 10000ms);
+    factory.registerNodeType<SleepBtNode>("Stow", std::ref(*this), 2000ms);
     factory.registerSimpleAction("SendSuccess", std::bind(&ExcavatorWork::SendSuccess, this, _1));
     factory.registerSimpleAction("Fail", std::bind(&ExcavatorWork::Fail, this, _1));
     factory.registerSimpleAction("CriticalFail", std::bind(&ExcavatorWork::CriticalFail, this, _1));
