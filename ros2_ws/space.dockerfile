@@ -23,12 +23,17 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,t
     tmux \
     python3-pip \
     python3-pytest \
+    # For bevy
     g++ pkg-config libx11-dev libasound2-dev libudev-dev libxkbcommon-x11-0 mesa-vulkan-drivers \
     libx11-dev libxcursor-dev libxcb1-dev libxi-dev libxkbcommon-dev libxkbcommon-x11-dev \
     nvidia-driver-550 \
     vulkan-tools \
+    # For BehaviorTree.CPP
+    libczmq-dev \
+    # Dependencies
     libgeographic-dev
-  # Bind mount ensures rosdep finds dependencies
+
+# Bind mount ensures rosdep finds dependencies
 # RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,target=/var/lib/apt,sharing=locked \
 #   --mount=type=bind,target=${HOME_DIR}/workspace \
 #   rosdep update && rosdep install --from-paths ${HOME_DIR}/workspace/src --ignore-src -r -y
