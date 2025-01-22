@@ -196,12 +196,18 @@ struct LsWorking : FSM::State {
   void exitGuard(GuardControl &control) {
     if (active_goal_handle) {
       do_work_client->async_cancel_goal(active_goal_handle);
-      control.cancelPendingTransitions();
+      /* We should not cancel the transition since LsWorking will then just restart the cancelled job */
+      // control.cancelPendingTransitions();
+      while (rclcpp::ok() && active_goal_handle) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        RCLCPP_WARN(node->get_logger(), "Waiting for goal to cancel...");
+      }
     }
   }
 
   void exit(Control &control) {
     battery_listener.deinit();
+    active_goal_handle.reset();
   }
 
 private:
@@ -229,7 +235,7 @@ private:
         RCLCPP_ERROR(node->get_logger(), "Goal was aborted");
         break;
       case rclcpp_action::ResultCode::CANCELED:
-        RCLCPP_ERROR(node->get_logger(), "Goal was canceled");
+        RCLCPP_INFO(node->get_logger(), "Goal was canceled");
         break;
       default:
         RCLCPP_ERROR(node->get_logger(), "Unknown result code");
@@ -403,15 +409,16 @@ int main(int argc, char * argv[]) {
 	// shared data storage instance
   auto node = std::make_shared<rclcpp::Node>("rover_fsm");
 	Context context{node};
-  rclcpp::executors::MultiThreadedExecutor executor;
-  executor.add_node(node);
-
 
 	FSM::Instance machine{context};
 
+  /* This needs to be a separate thread since machine.update() may block */
+  std::thread([node](){rclcpp::spin(node);}).detach();
+
+  rclcpp::Rate rate(10);
   while (rclcpp::ok()) {
       machine.update();
-      executor.spin_once(std::chrono::milliseconds(100));
+      rate.sleep();
   }
 
 	return 0;
