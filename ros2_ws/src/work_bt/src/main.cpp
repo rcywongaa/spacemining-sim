@@ -50,7 +50,6 @@ private:
 class ExcavatorWork : public rclcpp::Node {
 public:
   ExcavatorWork() : Node("excavator_bt") {
-    BT::BehaviorTreeFactory factory;
     setup(factory);
     this->declare_parameter("bt_xml", std::string("my_tree.xml"));
 
@@ -58,10 +57,7 @@ public:
     is_cancelling = false;
 
     std::string bt_xml = this->get_parameter("bt_xml").as_string();
-    // work_bt = factory.createTreeFromFile(bt_xml);
     factory.registerBehaviorTreeFromFile(bt_xml);
-    work_bt = factory.createTree("ExcavatorBT");
-    stow_bt = factory.createTree("StowBT");
 
     bt_server = rclcpp_action::create_server<DoWork>(
         this, "do_work", std::bind(&ExcavatorWork::handle_goal, this, _1, _2),
@@ -108,14 +104,18 @@ private:
   }
 
   void run_work_bt() {
+    /* Create tree here instead of constructor since we want the tree to always start from the beginning */
+    auto work_bt = factory.createTree("ExcavatorBT");
     rclcpp::Rate rate(10);
     while (rclcpp::ok()) {
       {
         std::scoped_lock<std::mutex> lock(mtx);
         if (is_cancelling) {
           is_working = false;
+          work_bt.haltTree();
           return;
         }
+        RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "Ticking work_bt");
         if (work_bt.tickOnce() != BT::NodeStatus::RUNNING) {
           return;
         }
@@ -125,6 +125,7 @@ private:
   }
 
   void cancel() {
+    auto stow_bt = factory.createTree("StowBT");
     rclcpp::Rate rate(10);
     // Wait for work_bt to stop
     while (rclcpp::ok() && is_working) {
@@ -133,6 +134,7 @@ private:
     while (rclcpp::ok()) {
       {
         std::scoped_lock<std::mutex> lock(mtx);
+        RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "Ticking stow_bt");
         if (stow_bt.tickOnce() != BT::NodeStatus::RUNNING) {
           is_cancelling = false;
           /* A successful cancel is treated as a succeeded goal */
@@ -155,9 +157,7 @@ private:
   std::shared_ptr<rclcpp_action::ServerGoalHandle<DoWork>> active_goal_handle;
 
   std::mutex mtx;
-  BT::Tree work_bt;
   std::atomic_bool is_working;
-  BT::Tree stow_bt;
   std::atomic_bool is_cancelling;
 
   /********** BT Functions **********/
@@ -188,6 +188,8 @@ private:
     factory.registerSimpleAction("Fail", std::bind(&ExcavatorWork::Fail, this, _1));
     factory.registerSimpleAction("CriticalFail", std::bind(&ExcavatorWork::CriticalFail, this, _1));
   }
+
+  BT::BehaviorTreeFactory factory;
   /********************/
 
 };
