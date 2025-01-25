@@ -1,0 +1,7 @@
+uint8 STOW = 0
+uint8 READY_POSE = 1
+uint8 EXCAVATE = 2
+
+uint8 motion
+---
+---

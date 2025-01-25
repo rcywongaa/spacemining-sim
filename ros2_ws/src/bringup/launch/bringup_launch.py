@@ -28,6 +28,13 @@ def generate_launch_description():
             output='screen',
             parameters=[]
         ),
+        Node(
+            package='arm',
+            executable='arm',
+            name='arm',
+            output='screen',
+            parameters=[]
+        ),
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource([
               PathJoinSubstitution([FindPackageShare('work_bt'), 'launch', 'excavator_bt_launch.py'])

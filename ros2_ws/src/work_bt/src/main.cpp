@@ -11,6 +11,7 @@
 #include "rover_interfaces/action/navigate_to_position.hpp"
 #include "work_bt/action/do_work.hpp"
 #include "work_bt/action/empty_action.hpp"
+#include "arm/action/arm.hpp"
 
 #include "sleep_bt_node.hpp"
 #include "simple_ros_action_node.hpp"
@@ -18,6 +19,7 @@
 using DoWork = work_bt::action::DoWork;
 using EmptyAction = work_bt::action::EmptyAction;
 using NavigateToPosition = rover_interfaces::action::NavigateToPosition;
+using Arm = arm::action::Arm;
 using namespace std::placeholders;
 using namespace std::chrono_literals;
 
@@ -171,14 +173,21 @@ private:
       goal.target.position.longitude = 80.0;
       return goal;
     });
-    factory.registerNodeType<SimpleRosActionNode<EmptyAction>>("AssumeReadyPose", node, "assume_ready_pose", []() {
-      return EmptyAction::Goal();
+    factory.registerNodeType<SimpleRosActionNode<Arm>>(
+        "AssumeReadyPose", node, "arm_server", []() {
+          auto goal = Arm::Goal();
+          goal.motion = Arm::Goal::READY_POSE;
+          return goal;
     });
-    factory.registerNodeType<SimpleRosActionNode<EmptyAction>>("Excavate", node, "excavate", []() {
-      return EmptyAction::Goal();
+    factory.registerNodeType<SimpleRosActionNode<Arm>>("Excavate", node, "arm_server", []() {
+          auto goal = Arm::Goal();
+          goal.motion = Arm::Goal::EXCAVATE;
+          return goal;
     });
-    factory.registerNodeType<SimpleRosActionNode<EmptyAction>>("Stow", node, "stow", []() {
-      return EmptyAction::Goal();
+    factory.registerNodeType<SimpleRosActionNode<Arm>>("Stow", node, "arm_server", []() {
+          auto goal = Arm::Goal();
+          goal.motion = Arm::Goal::STOW;
+          return goal;
     });
     factory.registerSimpleAction("SendSuccess", std::bind(&ExcavatorWork::SendSuccess, this, _1));
     factory.registerSimpleAction("Fail", std::bind(&ExcavatorWork::Fail, this, _1));

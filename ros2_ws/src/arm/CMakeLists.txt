@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.8)
-project(work_bt)
+project(arm)
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
@@ -7,40 +7,19 @@ endif()
 
 # find dependencies
 find_package(ament_cmake REQUIRED)
-# uncomment the following section in order to fill in
-# further dependencies manually.
-# find_package(<dependency> REQUIRED)
-find_package(behaviortree_cpp REQUIRED)
-find_package(behaviortree_ros2 REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
-find_package(std_msgs REQUIRED)
-find_package(rover_interfaces REQUIRED)
-find_package(arm REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}_interfaces
-  "msg/WorkResult.msg"
-  "action/DoWork.action"
-  "action/EmptyAction.action"
+  "action/Arm.action"
   DEPENDENCIES std_msgs
 )
 
-add_executable (excavator_bt src/main.cpp)
-ament_target_dependencies(excavator_bt rclcpp rclcpp_action behaviortree_cpp behaviortree_ros2 rover_interfaces arm)
+add_executable (arm src/main.cpp)
+ament_target_dependencies(arm rclcpp rclcpp_action)
 rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME}_interfaces "rosidl_typesupport_cpp")
-target_link_libraries(excavator_bt "${cpp_typesupport_target}")
-
-# Install launch files.
-install(DIRECTORY
-  launch
-  config
-  DESTINATION share/${PROJECT_NAME}/
-)
-
-install(TARGETS
-  excavator_bt
-  DESTINATION lib/${PROJECT_NAME})
+target_link_libraries(arm "${cpp_typesupport_target}")
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
@@ -53,5 +32,9 @@ if(BUILD_TESTING)
   set(ament_cmake_cpplint_FOUND TRUE)
   ament_lint_auto_find_test_dependencies()
 endif()
+
+install(TARGETS
+  arm
+  DESTINATION lib/${PROJECT_NAME})
 
 ament_package()
