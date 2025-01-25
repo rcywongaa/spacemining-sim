@@ -11,17 +11,22 @@ find_package(ament_cmake REQUIRED)
 # further dependencies manually.
 # find_package(<dependency> REQUIRED)
 find_package(behaviortree_cpp REQUIRED)
+find_package(behaviortree_ros2 REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
+find_package(std_msgs REQUIRED)
+find_package(rover_interfaces REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}_interfaces
   "msg/WorkResult.msg"
   "action/DoWork.action"
+  "action/EmptyAction.action"
+  DEPENDENCIES std_msgs
 )
 
 add_executable (excavator_bt src/main.cpp)
-ament_target_dependencies(excavator_bt rclcpp rclcpp_action behaviortree_cpp)
+ament_target_dependencies(excavator_bt rclcpp rclcpp_action behaviortree_cpp behaviortree_ros2 rover_interfaces)
 rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME}_interfaces "rosidl_typesupport_cpp")
 target_link_libraries(excavator_bt "${cpp_typesupport_target}")
 
