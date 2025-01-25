@@ -30,6 +30,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,t
     vulkan-tools \
     # For BehaviorTree.CPP
     libczmq-dev \
+    # For BehaviorTree.ROS2
+    python3-jinja2 python3-typeguard \
     # Dependencies
     libgeographic-dev
 
