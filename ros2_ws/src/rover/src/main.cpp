@@ -54,13 +54,13 @@ std::tuple<double, double> calc_error(rover_interfaces::msg::GeoPose2D from, rov
   double azimuth2_deg = 0.0; // deg
   geo.Inverse(lat1, lon1, lat2, lon2, distance, azimuth1_deg, azimuth2_deg);
 
-  RCLCPP_INFO(rclcpp::get_logger("rover"), "az1: %f, az2: %f", azimuth1_deg, azimuth2_deg);
+  RCLCPP_DEBUG(rclcpp::get_logger("rover"), "az1: %f, az2: %f", azimuth1_deg, azimuth2_deg);
 
   // Convert azimuth to a heading
   double desired_heading = azimuth_to_heading(azimuth1_deg);
 
   double heading_error = angles::shortest_angular_distance(angles::from_degrees(from.heading), angles::from_degrees(desired_heading));
-  RCLCPP_INFO(rclcpp::get_logger("rover"), "Current heading: %f, Desired heading: %f, heading error: %f", angles::from_degrees(from.heading), angles::from_degrees(desired_heading), heading_error);
+  RCLCPP_DEBUG(rclcpp::get_logger("rover"), "Current heading: %f, Desired heading: %f, heading error: %f", angles::from_degrees(from.heading), angles::from_degrees(desired_heading), heading_error);
   return std::make_tuple(heading_error, distance);
 }
 
@@ -95,9 +95,6 @@ private:
   rclcpp_action::CancelResponse handle_cancel(const std::shared_ptr<rclcpp_action::ServerGoalHandle<NavigateToPosition>> goal_handle) {
     std::scoped_lock lock(mtx);
     RCLCPP_INFO(this->get_logger(), "Received cancel request");
-    goal_handle->canceled({});
-    target_pose.reset();
-    active_goal_handle.reset();
     return rclcpp_action::CancelResponse::ACCEPT;
   }
 
@@ -121,7 +118,7 @@ private:
     }
     auto target_pose = this->target_pose.value();
     auto [heading_error, distance] = calc_error(current_pose, target_pose);
-    RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 500, "Heading error: %f, Distance error: %f", heading_error, distance);
+    RCLCPP_DEBUG_THROTTLE(this->get_logger(), *this->get_clock(), 500, "Heading error: %f, Distance error: %f", heading_error, distance);
 
     /* Close enough */
     if (distance < DISTANCE_THRESHOLD) {
@@ -140,10 +137,17 @@ private:
   }
 
   void timer_cb() {
+    std::scoped_lock lock(mtx);
+    if (active_goal_handle && active_goal_handle->is_canceling()) {
+      RCLCPP_INFO(this->get_logger(), "Setting goal as canceled");
+      active_goal_handle->canceled(std::make_shared<NavigateToPosition::Result>());
+      target_pose.reset();
+      active_goal_handle.reset();
+    }
+
     auto cmd_vel = calc_cmd_vel();
 
     if (cmd_vel.linear.x == 0 && cmd_vel.angular.z == 0) {
-      std::scoped_lock lock(mtx);
       if (auto goal_handle = active_goal_handle) {
         RCLCPP_INFO(this->get_logger(), "Setting goal as succeeded");
         goal_handle->succeed(std::make_shared<NavigateToPosition::Result>());
@@ -159,7 +163,7 @@ private:
 
   rclcpp_action::Server<NavigateToPosition>::SharedPtr navigate_to_pose_server;
   std::shared_ptr<rclcpp_action::ServerGoalHandle<NavigateToPosition>> active_goal_handle;
-  std::mutex mtx;
+  std::recursive_mutex mtx;
   std::optional<rover_interfaces::msg::GeoPose2D> target_pose;
 
   rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr velocity_publisher;
