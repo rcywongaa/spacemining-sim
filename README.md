@@ -80,6 +80,7 @@ Why HFSM2 and not TinyFSM/SML/SMACC2/Statechart/MSM?
   - Superstate initiated transitions
   - Transitions with payload
   Only HFSM2 satisfies all requirements.
+
   |                                      | ~~TinyFSM~~ (Not HSM)     | SML   | SMACC2 | HFSM2                      | ~~MSM~~ (superceded by SML)     | Statecharts                                            |
   | ------------------------------------ | --------------------- | ----- | ------ | -------------------------- | --------------------------- | ------------------------------------------------------ |
   | Superstate enter/exit actions        |                       | Y     | N      | Y                          | Y                           |                                                        |
@@ -87,3 +88,4 @@ Why HFSM2 and not TinyFSM/SML/SMACC2/Statechart/MSM?
   | Per state member variables           |                       | Y     | Y      | Y                          | ?                           |                                                        |
   | Superstates initiated transitions    |                       |       |        | Y                          |                             |                                                        |
   | Transition with payload              |                       |       |        | Y                          |                             | N (Parameterized states can act as hardcoded payloads) |
+
