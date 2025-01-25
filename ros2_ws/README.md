@@ -38,7 +38,7 @@ Instead, the dependencies are cloned and built as part of the image.
   ```
   println!("cargo:rustc-link-lib=dylib=rmw_cyclonedds_cpp");
   ```
-- `error: linking with `cc` failed: exit status: 1`
+- ``error: linking with `cc` failed: exit status: 1``
 
   Perform a clean rebuild with `rm -rf build install log .cargo`.
   Also make sure `$LD_LIBRARY_PATH` ONLY contains stuff from the `/opt/ros/` directory and nothing from the current `install` directory.

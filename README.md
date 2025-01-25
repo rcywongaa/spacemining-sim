@@ -36,9 +36,9 @@ Robot Types: (inspired by [Offworld](https://www.offworld.ai/products))
   - [x] Single excavator with manual controls
   - [x] Interface with ROS using `ros2-rust`
 - [x] Set up robot running Space ROS
-- [ ] Create HFSMBTH
+- [x] Create HFSMBTH
   - [x] Create FSM
-  - [ ] Create BT
+  - [x] Create BT
 - [ ] Macro Sim UI
 - [ ] Multiple rovers
 - [ ] Set up micro sim (Gazebo)
@@ -71,3 +71,19 @@ Why HFSMBTH?
   FSMs are great at modelling cyclical behavior but awful at modelling sequences of fallible actions (fallback/retry adds lots of unnecessary states).
 
   Combine them both to get the best of both worlds.
+
+Why HFSM2 and not TinyFSM/SML/SMACC2/Statechart/MSM?
+- I wanted the following from my hierarchical FSM framework:
+  - Superstate enter/exit actions
+  - Direct transitions between substates
+  - Per state member variables
+  - Superstate initiated transitions
+  - Transitions with payload
+  Only HFSM2 satisfies all requirements.
+  |                                      | ~~TinyFSM~~ (Not HSM)     | SML   | SMACC2 | HFSM2                      | ~~MSM~~ (superceded by SML)     | Statecharts                                            |
+  | ------------------------------------ | --------------------- | ----- | ------ | -------------------------- | --------------------------- | ------------------------------------------------------ |
+  | Superstate enter/exit actions        |                       | Y     | N      | Y                          | Y                           |                                                        |
+  | Direct transitions to/from substates |                       | Hacky |        | Y                          |                             | Y                                                      |
+  | Per state member variables           |                       | Y     | Y      | Y                          | ?                           |                                                        |
+  | Superstates initiated transitions    |                       |       |        | Y                          |                             |                                                        |
+  | Transition with payload              |                       |       |        | Y                          |                             | N (Parameterized states can act as hardcoded payloads) |
