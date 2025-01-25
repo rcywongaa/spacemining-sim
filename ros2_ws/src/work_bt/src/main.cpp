@@ -169,8 +169,8 @@ private:
   void setup(BT::BehaviorTreeFactory& factory) {
     factory.registerNodeType<SimpleRosActionNode<NavigateToPosition>>("GoToWorksite", node, "navigate_to_position", []() {
       auto goal = NavigateToPosition::Goal();
-      goal.target.position.latitude = 80.0;
-      goal.target.position.longitude = 80.0;
+      goal.target.position.latitude = 30.0;
+      goal.target.position.longitude = 30.0;
       return goal;
     });
     factory.registerNodeType<SimpleRosActionNode<Arm>>(
