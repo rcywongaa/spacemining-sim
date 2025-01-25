@@ -23,11 +23,11 @@ using namespace std::placeholders;
 
 using NavigateToPosition = rover_interfaces::action::NavigateToPosition;
 
-const double LINEAR_P = 1.0;
-const double ANGULAR_P = 1.0;
+const double LINEAR_P = 2.0;
+const double ANGULAR_P = 2.0;
 const double DISTANCE_THRESHOLD = 1e-3;
-const double MAX_ANGULAR_VELOCITY = M_PI/4.0;
-const double MAX_LINEAR_VELOCITY = 2.0;
+const double MAX_ANGULAR_VELOCITY = M_PI/2.0;
+const double MAX_LINEAR_VELOCITY = 4.0;
 const double ASTEROID_RADIUS = 50.0;
 static const Geodesic geo(ASTEROID_RADIUS, 0);
 
