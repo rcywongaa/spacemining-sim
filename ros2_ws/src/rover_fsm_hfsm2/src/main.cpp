@@ -48,7 +48,7 @@ using FSM = M::PeerRoot <
               M::Composite<S(SsAutonomous),
                   S(LsWorking),
                   S(LsCharging),
-                  S(LsSleeping)
+                  S(LsCritical)
               >,
               M::Composite<S(SsManual),
                   S(LsManualTask),
@@ -110,10 +110,6 @@ private:
   std::optional<typename SrvType::Request::SharedPtr> request;
 };
 
-/**
- * FIXME: All states should initialize ROS stuff in constructor
- * and check/wait for server availability in entryGuard
- */
 struct SsManual : FSM::State {
   void enter(Control &control) {
     node = control.context().node;
@@ -159,6 +155,7 @@ private:
 
 struct LsWorking : FSM::State {
   void enter(Control &control) {
+    has_critical_failure = false;
     node = control.context().node;
     RCLCPP_INFO(node->get_logger(), "Start working...");
     battery_listener.init(control.context().node, "/battery_state");
@@ -169,6 +166,12 @@ struct LsWorking : FSM::State {
   }
 
   void update(FullControl &control) {
+    if (has_critical_failure) {
+      RCLCPP_INFO(control.context().node->get_logger(), "Critical failure, switching to Critical");
+      control.changeTo<LsCritical>();
+      return;
+    }
+
     if (auto battery_msg = battery_listener.get_msg()) {
       if (battery_msg->percentage < 0.3) {
         RCLCPP_INFO(control.context().node->get_logger(), "Low battery, switching to charging");
@@ -229,7 +232,20 @@ private:
   void result_callback(const rclcpp_action::ClientGoalHandle<DoWork>::WrappedResult &result) {
     switch (result.code) {
       case rclcpp_action::ResultCode::SUCCEEDED:
-        RCLCPP_INFO(node->get_logger(), "Goal succeeded");
+        switch(result.result->result.result) {
+          case work_bt::msg::WorkResult::SUCCESS:
+            RCLCPP_INFO(node->get_logger(), "Work succeeded");
+            break;
+          case work_bt::msg::WorkResult::FAILURE:
+            RCLCPP_WARN(node->get_logger(), "Work failed");
+            break;
+          case work_bt::msg::WorkResult::CRITICAL_FAILURE:
+            RCLCPP_ERROR(node->get_logger(), "Work failed critically");
+            has_critical_failure = true;
+            break;
+          default:
+            RCLCPP_ERROR(node->get_logger(), "Unknown work result");
+        }
         break;
       case rclcpp_action::ResultCode::ABORTED:
         RCLCPP_ERROR(node->get_logger(), "Goal was aborted");
@@ -248,6 +264,7 @@ private:
   TopicListener<sensor_msgs::msg::BatteryState> battery_listener;
   rclcpp_action::Client<DoWork>::SharedPtr do_work_client;
   rclcpp_action::ClientGoalHandle<DoWork>::SharedPtr active_goal_handle;
+  std::atomic_bool has_critical_failure;
   std::mutex mtx;
 };
 
@@ -265,7 +282,7 @@ struct LsCharging : FSM::State {
     if (auto battery_msg = battery_listener.get_msg()) {
       if (battery_msg->percentage < 0.2) {
         RCLCPP_INFO(control.context().node->get_logger(), "Battery critical, switching to sleeping");
-        control.changeTo<LsSleeping>();
+        control.changeTo<LsCritical>();
         return;
       }
       if (battery_msg->percentage >= 1.0) {
@@ -395,7 +412,7 @@ private:
   std::atomic_bool is_done;
 };
 
-struct LsSleeping : FSM::State {
+struct LsCritical : FSM::State {
   void enter(Control &control) {
     RCLCPP_INFO(control.context().node->get_logger(), "Start sleep...");
   }
