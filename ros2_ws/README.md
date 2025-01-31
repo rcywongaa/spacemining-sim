@@ -2,11 +2,20 @@
 1. Build `osrf/space-ros:latest` container with `space-ros/build.sh`
 1. Build `spaceros2_rust_dev` container with `space_build.sh`
 1. Enter container with `space_shell.sh`
-1. Build `ros2_rust` and `macro_sim` with `colcon build --packages-up-to macro_sim`
+1. Build with `colcon build --cmake-args -DCMAKE_EXPORT_COMPILE_COMMANDS=1 --packages-up-to bringup`
    May need
    ```
-   colcon build --allow-overriding action_msgs builtin_interfaces geometry_msgs rcl_interfaces rosgraph_msgs rosidl_default_generators rosidl_default_runtime std_msgs test_interface_files test_msgs unique_identifier_msgs --packages-up-to macro_sim
+   colcon build --allow-overriding action_msgs builtin_interfaces geometry_msgs rcl_interfaces rosgraph_msgs rosidl_default_generators rosidl_default_runtime std_msgs test_interface_files test_msgs unique_identifier_msgs
    ```
+# Launch
+```
+ros2 launch bringup bringup_launch.py
+```
+
+# Run Tests
+```
+colcon test-result --delete-yes && colcon test --ctest-args tests --packages-select rover_fsm && colcon test-result --all --verbose
+```
 # Conventions
 `heading` is counterclockwise, `azimuth` is clockwise, both are between [-pi, pi].
 
