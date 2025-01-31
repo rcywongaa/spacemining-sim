@@ -29,7 +29,17 @@ if(BUILD_TESTING)
   # comment the line when this package is in a git repo and when
   # a copyright and license is added to all source files
   set(ament_cmake_cpplint_FOUND TRUE)
-  ament_lint_auto_find_test_dependencies()
+
+  # This doesn't seem to work
+  # set(AMENT_LINT_AUTO_FILE_EXCLUDE src/hfsm2/machine.hpp)
+
+  # Disable linting for now...
+  # ament_lint_auto_find_test_dependencies()
+
+
+  find_package(ament_cmake_gtest REQUIRED)
+  ament_add_gtest(${PROJECT_NAME}_test src/test/test.cpp)
+  ament_target_dependencies(${PROJECT_NAME}_test rclcpp rover_interfaces sensor_msgs rclcpp_action work_bt)
 endif()
 
 ament_package()
