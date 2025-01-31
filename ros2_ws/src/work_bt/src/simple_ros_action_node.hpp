@@ -5,7 +5,6 @@
 #include <rclcpp_action/rclcpp_action.hpp>
 
 #include "behaviortree_ros2/bt_action_node.hpp"
-#include "work_bt/action/bt_action_client.hpp"
 
 template<typename ActionType>
 class SimpleRosActionNode : public BT::RosActionNode<ActionType> {
