@@ -13,10 +13,11 @@ RUN pip install git+https://github.com/colcon/colcon-cargo.git git+https://githu
 # Install dependencies
 # Using Docker BuildKit cache mounts for /var/cache/apt and /var/lib/apt ensures that
 # the cache won't make it into the built image but will be maintained between steps.
+# RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,target=/var/lib/apt,sharing=locked \
+#   sudo apt update
+# Do apt update and apt install together to prevent stale apt cache
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,target=/var/lib/apt,sharing=locked \
-  sudo apt update
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,target=/var/lib/apt,sharing=locked \
-  sudo DEBIAN_FRONTEND=noninteractive apt install -y \
+  sudo apt update && sudo DEBIAN_FRONTEND=noninteractive apt install -y \
     curl \
     git \
     libclang-dev \
