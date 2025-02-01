@@ -1,0 +1,40 @@
+on:
+  push:
+    paths-ignore:
+      - ros2_ws/space.dockerfile # Changes to dockerfile will trigger dev image rebuild which in turn triggers this workflow
+  workflow_run:
+    workflows: ["Build and push dev image"]
+    types:
+      - completed
+
+name: Build
+
+jobs:
+  build-job:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    #     working-directory: ./workspace
+    container:
+      image: ghcr.io/${{ github.actor }}/spaceros2_rust_dev:latest
+      # options: --user spaceros-user
+      options: --user root
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: investigate
+        run: |
+          pwd
+          whoami
+          ls -la
+          id -u
+
+      - name: Build
+        run: source /opt/spaceros/install/setup.bash && colcon build --cmake-args -DCMAKE_EXPORT_COMPILE_COMMANDS=1 --packages-up-to bringup
+
+      - name: Run fsm test
+        run: source /opt/spaceros/install/setup.bash && colcon test-result --delete-yes && colcon test --ctest-args tests --packages-select rover_fsm
+
+      - name: Print test results
+        run: source /opt/spaceros/install/setup.bash && colcon test-result --all --verbose
