@@ -1,0 +1,57 @@
+repositories:
+  BehaviorTree.CPP:
+    type: git
+    url: https://github.com/BehaviorTree/BehaviorTree.CPP.git
+    version: master
+  BehaviorTree.ROS2:
+    type: git
+    url: https://github.com/BehaviorTree/BehaviorTree.ROS2.git
+    version: humble
+  RSL:
+    type: git
+    url: https://github.com/PickNikRobotics/RSL.git
+    version: main
+  angles:
+    type: git
+    url: https://github.com/ros/angles.git
+    version: ros2
+  cpp_polyfills:
+    type: git
+    url: https://github.com/PickNikRobotics/cpp_polyfills.git
+    version: main
+  generate_parameter_library:
+    type: git
+    url: https://github.com/PickNikRobotics/generate_parameter_library.git
+    version: main
+  geographic_info:
+    type: git
+    url: https://github.com/ros-geographic-info/geographic_info.git
+    version: ros2
+  ros2_rust:
+    type: git
+    url: https://github.com/rcywongaa/ros2_rust.git
+    version: spaceros
+  ros2_rust_deps/ros2/common_interfaces:
+    type: git
+    url: https://github.com/ros2/common_interfaces.git
+    version: humble
+  ros2_rust_deps/ros2/example_interfaces:
+    type: git
+    url: https://github.com/ros2/example_interfaces.git
+    version: humble
+  ros2_rust_deps/ros2/rcl_interfaces:
+    type: git
+    url: https://github.com/ros2/rcl_interfaces.git
+    version: humble
+  ros2_rust_deps/ros2/rosidl_defaults:
+    type: git
+    url: https://github.com/ros2/rosidl_defaults.git
+    version: humble
+  ros2_rust_deps/ros2/test_interface_files:
+    type: git
+    url: https://github.com/ros2/test_interface_files.git
+    version: humble
+  ros2_rust_deps/ros2/unique_identifier_msgs:
+    type: git
+    url: https://github.com/ros2/unique_identifier_msgs.git
+    version: humble

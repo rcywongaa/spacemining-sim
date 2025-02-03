@@ -15,23 +15,43 @@ jobs:
     defaults:
       run:
         shell: bash
-    #     working-directory: ./workspace
+        working-directory: ./ros2_ws
     container:
       image: ghcr.io/${{ github.actor }}/spaceros2_rust_dev:latest
-      # options: --user spaceros-user
-      options: --user root
+      options: --user spaceros-user
+      # options: --user root
     steps:
-      - uses: actions/checkout@v4
-
       - name: investigate
         run: |
-          pwd
           whoami
-          ls -la
-          id -u
+          colcon list
+          echo $PATH
+          pip list
+          cd src/external/ros2_rust/rosidl_generator_rs
+          cat package.xml
+
+      # - name: Use Docker in rootless mode.
+      #   uses: ScribeMD/rootless-docker@0.2.2
+
+      # https://github.com/actions/runner/issues/434
+      # - name: Fix $USER permission
+      #   run: sudo usermod -a -G root spaceros-user
+
+      # Checkout requires us to be root
+      # - uses: actions/checkout@v4
+      - name: Checkout in container
+        run: git pull origin ${{ github.repositoryUrl	}}
+
+      # colcon build requires us to be spaceros-user
+      # but this doesn't work
+      # - name: Switch to spaceros-user
+      #   run: su spaceros-user
+
+      - name: Pull external repos
+        run: mkdir src/external && cd src/external && vcs import < ../../external.repos
 
       - name: Build
-        run: source /opt/spaceros/install/setup.bash && colcon build --cmake-args -DCMAKE_EXPORT_COMPILE_COMMANDS=1 --packages-up-to bringup
+        run: su spaceros-user -c 'source /opt/spaceros/install/setup.bash && colcon build --cmake-args -DCMAKE_EXPORT_COMPILE_COMMANDS=1 --packages-up-to bringup --event-handlers console_cohesion+'
 
       - name: Run fsm test
         run: source /opt/spaceros/install/setup.bash && colcon test-result --delete-yes && colcon test --ctest-args tests --packages-select rover_fsm
