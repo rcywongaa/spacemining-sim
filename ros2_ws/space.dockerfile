@@ -1,4 +1,4 @@
-FROM osrf/space-ros:main
+FROM osrf/space-ros:humble-2024.10.0
 # ARG DEBIAN_FRONTEND=noninteractive # not visible in sudo commands
 
 # Install Rust
