@@ -1,4 +1,6 @@
 # Asteroid Mining Simulation
+![Dev Image](https://github.com/rcywongaa/spacemining-sim/actions/workflows/dev_image.yaml/badge.svg)
+![Build & Test](https://github.com/rcywongaa/spacemining-sim/actions/workflows/build.yaml/badge.svg)
 
 This is a proof of concept project that combines multiple technologies in the context of a simulated multi-robot asteroid mining scenario.
 
