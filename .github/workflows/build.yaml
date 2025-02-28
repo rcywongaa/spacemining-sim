@@ -7,10 +7,19 @@ on:
     types:
       - completed
 
-name: Build
+name: Build & Test
 
 jobs:
+  configure:
+    runs-on: ubuntu-latest
+    outputs:
+      uid_gid: ${{ steps.get-user.outputs.uid_gid }}
+    steps:
+      - id: get-user
+        run: echo "::set-output name=uid_gid::$(id -u):$(id -g)"
+
   build-job:
+    needs: configure
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -18,9 +27,15 @@ jobs:
         working-directory: ./ros2_ws
     container:
       image: ghcr.io/${{ github.actor }}/spaceros2_rust_dev:latest
-      options: --user spaceros-user
+      options: --user ${{ needs.configure.outputs.uid_gid }}
+      # options: --user spaceros-user
       # options: --user root
+      # This won't work
+      # https://github.com/orgs/community/discussions/26811
+
     steps:
+      - uses: actions/checkout@v4
+
       - name: investigate
         run: |
           whoami
